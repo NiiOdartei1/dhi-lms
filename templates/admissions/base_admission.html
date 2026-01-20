@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>{% block title %}Admissions{% endblock %}</title>
+
+    <!-- Bootstrap (safe default) -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+
+    {% block extra_css %}{% endblock %}
+
+    <style>
+        /* MAIN BACKGROUND FOR ALL PAGES */
+        body {
+            /* Change these colors to whatever main page background you want */
+            background: linear-gradient(180deg, #f2f6ff 0%, #e7f0ff 50%, #edf7f3 100%);
+            min-height: 100vh;
+        }
+
+        /* Optional subtle overlay shapes */
+        body::after {
+            content: "";
+            position: fixed;
+            bottom: -100px;
+            right: -100px;
+            width: 300px;
+            height: 300px;
+            background: rgba(255, 255, 255, 0.08);
+            border-radius: 50%;
+            pointer-events: none;
+            z-index: 0;
+            filter: blur(20px);
+        }
+    </style>
+</head>
+<body>
+
+<nav class="navbar navbar-expand-lg navbar-dark bg-primary shadow-sm">
+    <div class="container">
+        <!-- Brand / Logo -->
+        <a class="navbar-brand fw-bold d-flex align-items-center" href="{{ url_for('admissions.index') }}">
+            <img src="{{ url_for('static', filename='logo.png') }}" alt="KNUST Logo" height="40" class="me-2">
+            MyLMS Admissions
+        </a>
+
+        <!-- Toggler for mobile -->
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarAdmissions" aria-controls="navbarAdmissions" aria-expanded="false" aria-label="Toggle navigation">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+
+        <!-- Menu Links -->
+        <div class="collapse navbar-collapse" id="navbarAdmissions">
+            <ul class="navbar-nav ms-auto align-items-lg-center">
+                {% if session.get('applicant_id') %}
+                    <li class="nav-item">
+                        <a class="nav-link fw-medium" href="{{ url_for('admissions.dashboard') }}">Dashboard</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link fw-medium" href="{{ url_for('admissions.logout') }}">Logout</a>
+                    </li>
+                {% else %}
+                    <li class="nav-item">
+                        <a class="nav-link fw-medium" href="{{ url_for('admissions.login') }}">Login</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link fw-medium btn btn-warning text-dark ms-lg-3 px-3 py-1 rounded" href="{{ url_for('admissions.register') }}">
+                            Apply Now
+                        </a>
+                    </li>
+                {% endif %}
+            </ul>
+        </div>
+    </div>
+</nav>
+
+<div class="container mt-4 position-relative" style="z-index: 1;">
+
+    <!-- Flash Messages -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                <div class="alert alert-{{ category }} alert-dismissible fade show">
+                    {{ message }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+
+    <!-- Page Content -->
+    {% block content %}{% endblock %}
+
+</div>
+
+<footer class="text-center mt-5 mb-3 text-muted">
+    <small>&copy; {{ current_year or 2026 }} Admissions System</small>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+
+{% block extra_js %}{% endblock %}
+</body>
+</html>

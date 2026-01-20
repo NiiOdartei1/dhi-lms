@@ -1,0 +1,131 @@
+{% extends "admissions/base_admission.html" %}
+
+{% block title %}Applicant Dashboard{% endblock %}
+
+{% block content %}
+<div class="container my-4">
+
+    <!-- Page Header -->
+    <div class="mb-4">
+        <h3 class="fw-bold">Applicant Dashboard</h3>
+        <p class="text-muted">
+            Online Admissions Portal
+        </p>
+    </div>
+
+    <div class="row g-4">
+
+        <!-- LEFT: MAIN PANEL -->
+        <div class="col-lg-8">
+
+            <!-- Application Status -->
+            <div class="card shadow-sm mb-4">
+                <div class="card-body">
+                    <h5 class="fw-bold mb-2">
+                        Welcome, {{ applicant.email }}
+                    </h5>
+
+                    {% if applicant.application %}
+                        <span class="badge bg-info text-dark">
+                            Application Status:
+                            {{ applicant.application.status|capitalize }}
+                        </span>
+                    {% else %}
+                        <span class="badge bg-warning text-dark">
+                            Application Not Started
+                        </span>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Application Actions -->
+            <div class="card shadow-sm mb-4">
+                <div class="card-header fw-bold bg-white">
+                    Application Actions
+                </div>
+                <div class="card-body">
+
+                    {% if applicant.application %}
+                        <p class="mb-3">
+                            You have an ongoing application. Continue from where you left off.
+                        </p>
+
+                        <a href="{{ url_for('admissions.personal_info') }}"
+                           class="btn btn-primary me-2">
+                            Continue Application
+                        </a>
+
+                        <a href="{{ url_for('admissions.preview') }}"
+                           class="btn btn-outline-secondary">
+                            Preview Application
+                        </a>
+
+                    {% else %}
+                        <p class="mb-3">
+                            You have not started an application yet.
+                        </p>
+
+                        <a href="{{ url_for('admissions.start_application') }}"
+                           class="btn btn-success">
+                            Start New Application
+                        </a>
+                    {% endif %}
+
+                </div>
+            </div>
+
+            <!-- Help / Info -->
+            <div class="card shadow-sm">
+                <div class="card-header fw-bold bg-white">
+                    Important Notice
+                </div>
+                <div class="card-body">
+                    <p class="text-muted mb-0">
+                        Please ensure that all information provided is accurate.
+                        Once submitted, applications cannot be edited.
+                    </p>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- RIGHT: PROFILE PANEL -->
+        <div class="col-lg-4">
+
+            <div class="card shadow-sm">
+                <div class="card-header fw-bold bg-white">
+                    Applicant Profile
+                </div>
+                <div class="card-body">
+
+                    <p class="mb-2">
+                        <strong>Email</strong><br>
+                        {{ applicant.email }}
+                    </p>
+
+                    <p class="mb-2">
+                        <strong>Phone</strong><br>
+                        {{ applicant.phone or "Not provided" }}
+                    </p>
+
+                    <p class="mb-3">
+                        <strong>Account Created</strong><br>
+                        {{ applicant.created_at.strftime('%d %B %Y') if applicant.created_at else "—" }}
+                    </p>
+
+                    <hr>
+
+                    <a href="{{ url_for('admissions.logout') }}"
+                       class="btn btn-outline-danger w-100">
+                        Logout
+                    </a>
+
+                </div>
+            </div>
+
+        </div>
+
+    </div>
+
+</div>
+{% endblock %}

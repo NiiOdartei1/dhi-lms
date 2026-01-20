@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jarvis LMS Dashboard</title>
+
+<!-- Bootstrap CSS -->
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+
+<!-- Socket.IO -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js"></script>
+
+<!-- Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+<style>
+body { padding: 20px; background-color: #f4f6f9; }
+h1 { margin-bottom: 30px; }
+.card { margin-bottom: 20px; }
+.list-group-item { display: flex; justify-content: space-between; }
+.timestamp { font-size: 0.9rem; color: #555; }
+canvas { background: #fff; border-radius: 5px; }
+</style>
+</head>
+<body>
+
+<div class="container-fluid">
+  <h1 class="text-primary">Jarvis LMS Dashboard</h1>
+  <p class="timestamp">Last updated: <span id="timestamp">{{ now }}</span></p>
+
+  <div class="row">
+    <!-- Engagement -->
+    <div class="col-lg-4 col-md-6">
+      <div class="card border-danger">
+        <div class="card-header bg-danger text-white">Low Engagement Students</div>
+        <ul class="list-group list-group-flush" id="engagement-list">
+          <li class="list-group-item">Waiting for live data...</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Quiz Variance Chart -->
+    <div class="col-lg-4 col-md-6">
+      <div class="card border-warning">
+        <div class="card-header bg-warning text-dark">High Quiz Variance</div>
+        <canvas id="varianceChart" height="200"></canvas>
+      </div>
+    </div>
+
+    <!-- Attendance Chart -->
+    <div class="col-lg-4 col-md-12">
+      <div class="card border-info">
+        <div class="card-header bg-info text-white">Attendance Rates</div>
+        <canvas id="attendanceChart" height="200"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const socket = io();
+
+// Chart instances
+let varianceChart = new Chart(document.getElementById("varianceChart"), {
+    type: 'bar',
+    data: { labels: [], datasets: [{ label: 'Quiz Std Dev', data: [], backgroundColor: 'orange' }] },
+    options: { responsive: true, scales: { y: { beginAtZero: true } } }
+});
+
+let attendanceChart = new Chart(document.getElementById("attendanceChart"), {
+    type: 'bar',
+    data: { labels: [], datasets: [{ label: 'Attendance %', data: [], backgroundColor: 'deepskyblue' }] },
+    options: { responsive: true, scales: { y: { beginAtZero: true, max: 100 } } }
+});
+
+// Update metrics from server
+function updateMetrics(data) {
+    document.getElementById("timestamp").innerText = data.timestamp;
+
+    // Engagement list
+    const engagementList = document.getElementById("engagement-list");
+    engagementList.innerHTML = "";
+    if (data.engagement_alerts.length > 0) {
+        data.engagement_alerts.forEach(s => {
+            const li = document.createElement("li");
+            li.className = "list-group-item";
+            li.textContent = s.name;
+            const span = document.createElement("span");
+            span.textContent = s.ratio + "%";
+            li.appendChild(span);
+            engagementList.appendChild(li);
+        });
+    } else {
+        engagementList.innerHTML = '<li class="list-group-item">No low engagement students</li>';
+    }
+
+    // Quiz variance chart
+    varianceChart.data.labels = data.high_variance.map(q => q.quiz);
+    varianceChart.data.datasets[0].data = data.high_variance.map(q => q.stdev);
+    varianceChart.update();
+
+    // Attendance chart
+    attendanceChart.data.labels = Object.keys(data.attendance_rates);
+    attendanceChart.data.datasets[0].data = Object.values(data.attendance_rates);
+    attendanceChart.update();
+}
+
+// Request initial metrics
+socket.emit("request_metrics");
+
+// Listen for updates
+socket.on("update_metrics", data => updateMetrics(data));
+
+// Optional auto-refresh
+setInterval(() => socket.emit("request_metrics"), 60000);
+</script>
+
+</body>
+</html>

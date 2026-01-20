@@ -1,0 +1,121 @@
+{% extends 'admin/layout.html' %}
+{% block title %}Admission Vouchers | Admin{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+
+  <!-- Page Header -->
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h2 class="fw-bold text-primary">
+      <i class="fas fa-ticket-alt"></i> Admission Vouchers
+    </h2>
+    <a href="{{ url_for('admin.manage_vouchers') }}" class="btn btn-success shadow-sm">
+      <i class="fas fa-plus-circle"></i> New Voucher
+    </a>
+  </div>
+
+  <!-- Generate Vouchers Form -->
+  <div class="card shadow-sm border-0 mb-4">
+    <div class="card-header bg-gradient text-white"
+         style="background: linear-gradient(90deg, #6a11cb, #2575fc);">
+      <i class="fas fa-magic"></i> Generate Multiple Vouchers
+    </div>
+    <div class="card-body">
+      <form method="POST" class="row g-3">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+        <div class="col-md-4">
+          <label class="form-label fw-bold">Number of Vouchers</label>
+          <input type="number" name="count" class="form-control" placeholder="Enter number" required>
+        </div>
+
+        <div class="col-md-4">
+          <label class="form-label fw-bold">Amount (GHS)</label>
+          <input type="number" name="amount" class="form-control" placeholder="Enter amount" required>
+        </div>
+
+        <div class="col-md-4 d-grid align-self-end">
+          <button type="submit" class="btn btn-primary">
+            <i class="fas fa-magic me-1"></i> Generate
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Vouchers Table -->
+  <div class="card shadow-sm border-0">
+    <div class="card-header bg-gradient text-white"
+         style="background: linear-gradient(90deg, #1d4ed8, #22c55e);">
+      <i class="fas fa-list"></i> Existing Vouchers
+    </div>
+    <div class="card-body table-responsive">
+      <table class="table align-middle mb-0">
+    <thead class="table-light">
+        <tr>
+            <th>#</th>
+            <th>PIN</th>
+            <th>Serial</th>
+            <th>Amount (GHS)</th>
+            <th>Purchased?</th>
+            <th>Purchaser Email</th>
+            <th>Used?</th>
+            <th>Used By</th>
+            <th>Used At</th>
+            <th>Valid Until</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for v in vouchers %}
+        <tr>
+            <td>{{ loop.index }}</td>
+            <td>{{ v.pin }}</td>
+            <td>{{ v.serial }}</td>
+            <td>{{ v.amount }}</td>
+            
+            <td>
+                {% if v.purchaser_email %}
+                    <span class="badge bg-success">Yes</span>
+                {% else %}
+                    <span class="badge bg-secondary">No</span>
+                {% endif %}
+            </td>
+            <td>{{ v.purchaser_email or '—' }}</td>
+
+            <td>
+                {% if v.is_used %}
+                    <span class="badge bg-success">Yes</span>
+                {% else %}
+                    <span class="badge bg-secondary">No</span>
+                {% endif %}
+            </td>
+            <td>{{ v.used_by or '—' }}</td>
+            <td>{{ v.used_at.strftime('%d %b %Y') if v.used_at else '—' }}</td>
+            <td>{{ v.valid_until.strftime('%d %b %Y') if v.valid_until else '—' }}</td>
+        </tr>
+        {% else %}
+        <tr>
+            <td colspan="10" class="text-center text-muted py-4">
+                No vouchers found.
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+    </div>
+  </div>
+
+</div>
+
+<!-- Optional: Custom Styles -->
+<style>
+.table-hover tbody tr:hover {
+  background-color: #f0f4ff;
+  transition: 0.2s;
+}
+.card-header i {
+  margin-right: 5px;
+}
+</style>
+{% endblock %}

@@ -1,0 +1,179 @@
+{% extends "admissions/base_admission.html" %}
+{% block extra_css %}
+<style>
+/* FULL PAGE BACKGROUND */
+body {
+    background: url('{{ url_for("static", filename="img/hero-admissions.jpg") }}') no-repeat center center fixed;
+    background-size: cover;
+    position: relative;
+    color: #fff;
+}
+
+/* Overlay for readability */
+body::before {
+    content: "";
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.5); /* Dark overlay to improve text contrast */
+    z-index: -1;
+}
+
+/* Make sections stand out on light backgrounds */
+section.bg-light, section.bg-white {
+    background-color: rgba(255,255,255,0.9) !important;
+    color: #000 !important;
+    border-radius: 8px;
+    padding: 2rem 1rem;
+    margin-bottom: 1.5rem;
+}
+
+/* Hero adjustments */
+.admissions-hero {
+    padding-top: 4rem;
+    padding-bottom: 4rem;
+    text-shadow: 1px 1px 3px rgba(0,0,0,0.7);
+}
+
+.admissions-hero .btn-warning {
+    background-color: #ffd60a;
+    border: none;
+    color: #000;
+}
+
+.admissions-hero .btn-warning:hover {
+    background-color: #ffc300;
+}
+
+/* CTA Section */
+section.bg-dark {
+    background-color: rgba(33, 37, 41, 0.9) !important;
+}
+
+/* Cards in quick steps */
+.card {
+    background-color: rgba(255, 255, 255, 0.95);
+}
+
+/* Small adjustments for readability */
+ol, ul {
+    padding-left: 1.25rem;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+
+<!-- HERO -->
+<section class="admissions-hero text-center text-lg-start">
+    <div class="container">
+        <div class="row align-items-center">
+            <div class="col-lg-7">
+                <h1 class="fw-bold display-6 mb-3">MyLMS Online Admissions Portal</h1>
+                <p class="mb-3">
+                    This portal enables prospective applicants to purchase an e-voucher, complete and submit applications online,
+                    and track admission status for programmes offered by the University.
+                </p>
+
+                <a href="{{ url_for('admissions.register') }}" class="btn btn-warning fw-semibold px-4 me-2">
+                    Apply Now
+                </a>
+                <a href="#how-to-apply" class="btn btn-outline-light px-4">
+                    How to Apply
+                </a>
+            </div>
+
+            <div class="col-lg-5 d-none d-lg-block text-center">
+                <i class="fas fa-university fa-7x opacity-75"></i>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- QUICK STEPS -->
+<section class="py-3 bg-light">
+    <div class="container">
+        <div class="row text-center g-3">
+            <div class="col-md-4">
+                <div class="card border-0 shadow-sm h-100">
+                    <div class="card-body py-3">
+                        <i class="fas fa-user-graduate text-primary mb-2"></i>
+                        <h6 class="fw-bold mb-1">Create Applicant Account</h6>
+                        <p class="text-muted small mb-0">Register with a valid email address to manage and track your application.</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-4">
+                <div class="card border-0 shadow-sm h-100">
+                    <div class="card-body py-3">
+                        <i class="fas fa-file-invoice-dollar text-warning mb-2"></i>
+                        <h6 class="fw-bold mb-1">Purchase E-Voucher</h6>
+                        <p class="text-muted small mb-0">Obtain an application e-voucher (PIN and Serial) via approved payment channels.</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-4">
+                <div class="card border-0 shadow-sm h-100">
+                    <div class="card-body py-3">
+                        <i class="fas fa-upload text-success mb-2"></i>
+                        <h6 class="fw-bold mb-1">Submit Application</h6>
+                        <p class="text-muted small mb-0">Complete the form, upload required documents and submit before the deadline.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- HOW TO APPLY -->
+<section id="how-to-apply" class="py-3 bg-white">
+    <div class="container">
+        <h5 class="fw-bold text-primary mb-2">How to Apply</h5>
+        <ol class="small lh-base ps-3 mb-0">
+            <li>Purchase an official KNUST application e-voucher.</li>
+            <li>Register and log in using your voucher PIN and serial number.</li>
+            <li>Select the appropriate entry mode and programme.</li>
+            <li>Upload all required academic and identification documents.</li>
+            <li>Review and submit the completed application before the deadline.</li>
+            <li>Print application summary where required and submit by post if instructed.</li>
+            <li>Check the portal regularly for admission decisions and notices.</li>
+        </ol>
+    </div>
+</section>
+
+<!-- REQUIREMENTS -->
+<section id="requirements" class="py-3 bg-light">
+    <div class="container">
+        <h6 class="fw-bold text-primary mb-2">Required Documents & Notices</h6>
+        <ul class="small text-muted lh-base mb-2">
+            <li>Relevant examination results or academic transcripts</li>
+            <li>Certified certificates (HND / Degree where applicable)</li>
+            <li>Passport-sized photograph and valid photo identification</li>
+            <li>Programme-specific supporting documents</li>
+            <li>False declarations may result in disqualification</li>
+        </ul>
+        <div class="alert alert-warning py-2 small mb-0">
+            Applicants are advised to review payment instructions, deadlines and official announcements carefully.
+            Incomplete applications will not be processed.
+        </div>
+    </div>
+</section>
+
+<!-- CTA -->
+<section class="py-3 bg-dark text-white text-center">
+    <div class="container">
+        <h6 class="fw-bold mb-1">Ready to Apply?</h6>
+        <p class="small text-muted mb-2">
+            Begin your application by purchasing an e-voucher and completing the online form.
+        </p>
+        <a href="{{ url_for('admissions.register') }}" class="btn btn-warning fw-semibold px-4">
+            Start Application
+        </a>
+    </div>
+</section>
+
+{% endblock %}
