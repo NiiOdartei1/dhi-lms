@@ -6,7 +6,6 @@ from datetime import datetime
 from flask import Flask, render_template, redirect, url_for, flash, request, abort, jsonify, send_from_directory
 from werkzeug.utils import secure_filename
 from dotenv import load_dotenv
-from models import Admin, SchoolClass, User
 
 if os.environ.get("FLASK_ENV") == "production":
     import eventlet
@@ -135,6 +134,8 @@ logger.info("✓ All blueprints registered")
 @login_manager.user_loader
 def load_user(user_id):
     try:
+        # Lazy import to avoid DB work at module import time
+        from models import Admin, User
         if isinstance(user_id, str) and user_id.startswith("admin:"):
             uid = user_id.split(":", 1)[1]
             return Admin.query.filter_by(public_id=uid).first()
@@ -154,12 +155,19 @@ def one_time_init():
     # Run Jarvis automatically
     #run_on_startup(app)
     
+    # Lazy import models to avoid app-context errors at import time
+    from models import Admin, SchoolClass
+
     # DB tables
     db.create_all()
     logger.info("✓ Database tables created/verified")
 
     # Default Admin
-    super_admin = Admin.query.filter_by(username='SuperAdmin').first()
+    try:
+        super_admin = Admin.query.filter_by(username='SuperAdmin').first()
+    except Exception:
+        super_admin = None
+
     if not super_admin:
         admin = Admin(username='SuperAdmin', admin_id='ADM001')
         admin.set_password('Password123')
