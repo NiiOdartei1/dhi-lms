@@ -54,7 +54,7 @@ try:
 except Exception:
     # eventlet not available — use threading which is safe for development
     SOCKETIO_ASYNC_MODE = "threading"
-    
+
 # ===== Paths =====
 # Leave SQLALCHEMY_DATABASE_URI to be provided by `Config` (or DATABASE_URL).
 app.config.setdefault('UPLOAD_FOLDER', os.path.join(app.instance_path, 'uploads'))
@@ -84,8 +84,6 @@ migrate = Migrate(app, db)
 csrf = CSRFProtect(app)
 
 # ===== SocketIO =====
-eventlet.monkey_patch()
-SOCKETIO_ASYNC_MODE = "eventlet" if IS_PRODUCTION else "threading"
 logger.info("SocketIO async_mode=%s", SOCKETIO_ASYNC_MODE)
 socketio.init_app(app, async_mode=SOCKETIO_ASYNC_MODE, manage_session=False)
 
