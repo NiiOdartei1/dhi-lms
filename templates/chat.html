@@ -226,25 +226,29 @@
 <!-- AUDIO -->
 <audio id="ringtone" src="/static/sounds/ringtone.mp3" loop></audio>
 
-<!-- MESSAGE CONTEXT MENU -->
-<div id="msgContextMenu" style="position:absolute; display:none; z-index:9999;">
-  <button data-action="reply">↩️ Reply</button>
-  <button data-action="edit">✏️ Edit</button>
-  <button data-action="copy">📋 Copy</button>
-  <button data-action="forward">➡️ Forward</button>
-  <button data-action="delete">🗑 Delete</button>
-  <button data-action="react">👍 React</button>
+<!-- MESSAGE CONTEXT MENU (WhatsApp-style) -->
+<div id="msgContextMenu" class="whatsapp-context-menu" style="position:absolute; display:none; z-index:9999;">
+  <button data-action="reply" class="context-menu-btn"><i class="fas fa-reply"></i> Reply</button>
+  <button data-action="edit" class="context-menu-btn"><i class="fas fa-edit"></i> Edit</button>
+  <button data-action="copy" class="context-menu-btn"><i class="fas fa-copy"></i> Copy</button>
+  <button data-action="forward" class="context-menu-btn"><i class="fas fa-share"></i> Forward</button>
+  <button data-action="delete" class="context-menu-btn delete-btn"><i class="fas fa-trash"></i> Delete</button>
+  <button data-action="react" class="context-menu-btn"><i class="fas fa-smile"></i> React</button>
 </div>
 
-<!-- CONVERSATION CONTEXT MENU -->
-<div id="convContextMenu" style="position:absolute; display:none; z-index:9999; background: white; border: 1px solid #ddd; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); min-width: 180px; overflow: hidden;">
-  <button data-action="view_info" style="display: block; width: 100%; padding: 10px 16px; border: none; background: none; text-align: left; cursor: pointer; font-size: 14px;"><i class="fas fa-info-circle"></i> View Info</button>
-  <button data-action="mark_unread" style="display: block; width: 100%; padding: 10px 16px; border: none; background: none; text-align: left; cursor: pointer; font-size: 14px;"><i class="fas fa-envelope"></i> Mark Unread</button>
-  <button data-action="mute" style="display: block; width: 100%; padding: 10px 16px; border: none; background: none; text-align: left; cursor: pointer; font-size: 14px;"><i class="fas fa-bell-slash"></i> Mute</button>
-  <button data-action="pin" style="display: block; width: 100%; padding: 10px 16px; border: none; background: none; text-align: left; cursor: pointer; font-size: 14px;"><i class="fas fa-thumbtack"></i> Pin</button>
-  <button data-action="archive" style="display: block; width: 100%; padding: 10px 16px; border: none; background: none; text-align: left; cursor: pointer; font-size: 14px;"><i class="fas fa-archive"></i> Archive</button>
-  <button data-action="block" style="display: block; width: 100%; padding: 10px 16px; border: none; background: none; text-align: left; cursor: pointer; font-size: 14px;"><i class="fas fa-ban"></i> Block</button>
-  <button data-action="delete_convo" style="display: block; width: 100%; padding: 10px 16px; border: none; background: none; text-align: left; cursor: pointer; font-size: 14px; color: #e74c3c;"><i class="fas fa-trash"></i> Delete</button>
+<!-- CONVERSATION CONTEXT MENU (WhatsApp-style) -->
+<div id="convContextMenu" class="whatsapp-context-menu" style="position:absolute; display:none; z-index:9999;">
+  <button data-action="view_info" class="context-menu-btn"><i class="fas fa-info-circle"></i> View Info</button>
+  <button data-action="mark_unread" class="context-menu-btn"><i class="fas fa-envelope"></i> Mark Unread</button>
+  <button data-action="mark_read" class="context-menu-btn" style="display:none;"><i class="fas fa-envelope-open"></i> Mark Read</button>
+  <button data-action="mute" class="context-menu-btn"><i class="fas fa-bell-slash"></i> Mute</button>
+  <button data-action="unmute" class="context-menu-btn" style="display:none;"><i class="fas fa-bell"></i> Unmute</button>
+  <button data-action="pin" class="context-menu-btn"><i class="fas fa-thumbtack"></i> Pin</button>
+  <button data-action="unpin" class="context-menu-btn" style="display:none;"><i class="fas fa-thumbtack"></i> Unpin</button>
+  <button data-action="archive" class="context-menu-btn"><i class="fas fa-archive"></i> Archive</button>
+  <button data-action="unarchive" class="context-menu-btn" style="display:none;"><i class="fas fa-inbox"></i> Unarchive</button>
+  <button data-action="block" class="context-menu-btn"><i class="fas fa-ban"></i> Block</button>
+  <button data-action="delete_convo" class="context-menu-btn delete-btn"><i class="fas fa-trash"></i> Delete</button>
 </div>
 
 <!-- CALL MODALS -->
@@ -749,7 +753,42 @@
   let touchStartTime = 0;
   let touchStartX = 0;
   let touchStartY = 0;
+  let msgTouchStartTime = 0;
+  let msgTouchStartX = 0;
+  let msgTouchStartY = 0;
   const LONG_PRESS_DURATION = 500; // milliseconds
+
+  // Haptic feedback helper
+  function triggerHapticFeedback() {
+    if (navigator.vibrate) {
+      navigator.vibrate(30); // 30ms vibration
+    }
+  }
+
+  // Smart positioning helper - ensures menu stays in viewport
+  function positionMenuSmart(menu, x, y) {
+    menu.style.left = x + 'px';
+    menu.style.top = y + 'px';
+    
+    // Use requestAnimationFrame to ensure menu is rendered before measuring
+    requestAnimationFrame(() => {
+      const rect = menu.getBoundingClientRect();
+      const viewportWidth = window.innerWidth;
+      const viewportHeight = window.innerHeight;
+      
+      // Adjust horizontal position
+      if (rect.right > viewportWidth - 10) {
+        const newLeft = Math.max(10, viewportWidth - rect.width - 10);
+        menu.style.left = newLeft + 'px';
+      }
+      
+      // Adjust vertical position - prefer above, fallback below
+      if (rect.bottom > viewportHeight - 10) {
+        const newTop = Math.max(10, y - rect.height - 10);
+        menu.style.top = newTop + 'px';
+      }
+    });
+  }
 
   // Desktop: Right-click context menu
   document.addEventListener('contextmenu', (e) => {
@@ -759,13 +798,20 @@
     if (convItem) {
       e.preventDefault();
       currentContextConvo = convItem;
-      showConversationMenu(e.pageX || e.clientX, e.pageY || e.clientY);
+      convItem.style.backgroundColor = 'rgba(200, 200, 200, 0.1)';
+      const menu = document.getElementById('convContextMenu');
+      positionMenuSmart(menu, e.pageX || e.clientX, e.pageY || e.clientY);
+      menu.style.display = 'block';
     } else if (msgItem) {
       e.preventDefault();
-      showMessageMenu(msgItem, e.pageX || e.clientX, e.pageY || e.clientY);
+      msgItem.style.backgroundColor = 'rgba(200, 200, 200, 0.1)';
+      const menu = document.getElementById('msgContextMenu');
+      positionMenuSmart(menu, e.pageX || e.clientX, e.pageY || e.clientY);
+      menu.style.display = 'block';
     }
   });
 
+  // Mobile: Long-press on conversation
   document.addEventListener('touchstart', (e) => {
     const convItem = e.target.closest('.conv-item');
     if (convItem) {
@@ -774,10 +820,20 @@
       touchStartY = e.touches[0].clientY;
       currentContextConvo = convItem;
     }
+    
+    // Mobile: Long-press on message
+    const msgItem = e.target.closest('.message-item');
+    if (msgItem) {
+      msgTouchStartTime = Date.now();
+      msgTouchStartX = e.touches[0].clientX;
+      msgTouchStartY = e.touches[0].clientY;
+      currentContextMessage = msgItem;
+    }
   }, false);
 
   document.addEventListener('touchend', (e) => {
-    if (currentContextConvo) {
+    // Handle conversation long-press
+    if (currentContextConvo && !currentContextMessage) {
       const duration = Date.now() - touchStartTime;
       const distX = Math.abs(e.changedTouches[0].clientX - touchStartX);
       const distY = Math.abs(e.changedTouches[0].clientY - touchStartY);
@@ -786,31 +842,67 @@
       if (duration > LONG_PRESS_DURATION && !movedTooMuch) {
         e.preventDefault();
         e.stopPropagation();
-        showConversationMenu(touchStartX, touchStartY);
+        triggerHapticFeedback();
+        currentContextConvo.style.backgroundColor = 'rgba(200, 200, 200, 0.1)';
+        const menu = document.getElementById('convContextMenu');
+        positionMenuSmart(menu, touchStartX, touchStartY);
+        menu.style.display = 'block';
       }
     }
     touchStartTime = 0;
+    
+    // Handle message long-press
+    if (currentContextMessage && !currentContextConvo) {
+      const duration = Date.now() - msgTouchStartTime;
+      const distX = Math.abs(e.changedTouches[0].clientX - msgTouchStartX);
+      const distY = Math.abs(e.changedTouches[0].clientY - msgTouchStartY);
+      const movedTooMuch = distX > 10 || distY > 10;
+
+      if (duration > LONG_PRESS_DURATION && !movedTooMuch) {
+        e.preventDefault();
+        e.stopPropagation();
+        triggerHapticFeedback();
+        currentContextMessage.style.backgroundColor = 'rgba(200, 200, 200, 0.1)';
+        const menu = document.getElementById('msgContextMenu');
+        positionMenuSmart(menu, msgTouchStartX, msgTouchStartY);
+        menu.style.display = 'block';
+      }
+    }
+    msgTouchStartTime = 0;
+    currentContextMessage = null;
   }, false);
 
-  function showConversationMenu(x, y) {
-    const menu = document.getElementById('convContextMenu');
-    menu.style.display = 'block';
-    menu.style.left = x + 'px';
-    menu.style.top = y + 'px';
-  }
-
-  function showMessageMenu(msgItem, x, y) {
-    const menu = document.getElementById('msgContextMenu');
-    menu.style.display = 'block';
-    menu.style.left = x + 'px';
-    menu.style.top = y + 'px';
-  }
-
-  // Close context menu on click elsewhere
-  document.addEventListener('click', () => {
-    document.getElementById('convContextMenu').style.display = 'none';
-    document.getElementById('msgContextMenu').style.display = 'none';
-  });
+  // Close context menu on click elsewhere with animation
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.whatsapp-context-menu')) {
+      const convMenu = document.getElementById('convContextMenu');
+      const msgMenu = document.getElementById('msgContextMenu');
+      
+      if (convMenu.style.display !== 'none') {
+        convMenu.classList.add('slide-out');
+        setTimeout(() => {
+          convMenu.style.display = 'none';
+          convMenu.classList.remove('slide-out');
+          if (currentContextConvo) {
+            currentContextConvo.style.backgroundColor = '';
+            currentContextConvo = null;
+          }
+        }, 200);
+      }
+      
+      if (msgMenu.style.display !== 'none') {
+        msgMenu.classList.add('slide-out');
+        setTimeout(() => {
+          msgMenu.style.display = 'none';
+          msgMenu.classList.remove('slide-out');
+          if (currentContextMessage) {
+            currentContextMessage.style.backgroundColor = '';
+            currentContextMessage = null;
+          }
+        }, 200);
+      }
+    }
+  }, false);
 
   // Conversation context menu actions
   document.getElementById('convContextMenu').addEventListener('click', async (e) => {
@@ -908,7 +1000,17 @@
       alert('Action failed: ' + err.message);
     }
     
-    document.getElementById('convContextMenu').style.display = 'none';
+    // Close menu with animation
+    const convMenu = document.getElementById('convContextMenu');
+    convMenu.classList.add('slide-out');
+    setTimeout(() => {
+      convMenu.style.display = 'none';
+      convMenu.classList.remove('slide-out');
+      if (currentContextConvo) {
+        currentContextConvo.style.backgroundColor = '';
+        currentContextConvo = null;
+      }
+    }, 200);
   });
 
   // Helper functions for conversation actions
