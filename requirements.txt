@@ -53,5 +53,4 @@ wsproto==1.2.0
 wtforms==3.2.1
 wtforms-sqlalchemy==0.3
 zipp==3.23.0
-eventlet==0.33.3
 
