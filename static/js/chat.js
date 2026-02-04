@@ -577,7 +577,8 @@ const ChatApp = {
     // Desktop: Context menu on right-click
     wrapper.addEventListener('contextmenu', (e) => {
       e.preventDefault();
-      this.showMessageMenu(e, msg);
+      wrapper.style.backgroundColor = 'rgba(200, 200, 200, 0.1)';
+      this.showMessageMenu(e, msg, wrapper);
     });
 
     // Mobile: Long-press touch support
@@ -600,6 +601,7 @@ const ChatApp = {
 
       if (duration > LONG_PRESS_DURATION && !movedTooMuch) {
         e.preventDefault();
+        wrapper.style.backgroundColor = 'rgba(200, 200, 200, 0.1)';
         // Create synthetic event for showMessageMenu
         const evt = {
           pageX: touchStartX,
@@ -607,7 +609,13 @@ const ChatApp = {
           pageY: touchStartY,
           clientY: touchStartY
         };
-        this.showMessageMenu(evt, msg);
+        
+        // Haptic feedback
+        if (navigator.vibrate) {
+          navigator.vibrate(30);
+        }
+        
+        this.showMessageMenu(evt, msg, wrapper);
       }
       touchStartTime = 0;
     }, false);
@@ -1014,11 +1022,38 @@ const ChatApp = {
   },
 
   // ===== MESSAGE MENU =====
-  showMessageMenu(e, msg) {
+  showMessageMenu(e, msg, wrapper) {
     const menu = this.dom.msgContextMenu;
+    
+    // Store reference for cleanup
+    if (!window.currentMessageWrapper) {
+      window.currentMessageWrapper = null;
+    }
+    window.currentMessageWrapper = wrapper;
+    
+    // Set initial position
     menu.style.left = e.pageX + 'px';
     menu.style.top = e.pageY + 'px';
     menu.style.display = 'block';
+
+    // Smart positioning - keep menu in viewport
+    requestAnimationFrame(() => {
+      const rect = menu.getBoundingClientRect();
+      const viewportWidth = window.innerWidth;
+      const viewportHeight = window.innerHeight;
+      
+      // Adjust horizontal position
+      if (rect.right > viewportWidth - 10) {
+        const newLeft = Math.max(10, viewportWidth - rect.width - 10);
+        menu.style.left = newLeft + 'px';
+      }
+      
+      // Adjust vertical position - prefer above, fallback below
+      if (rect.bottom > viewportHeight - 10) {
+        const newTop = Math.max(10, e.pageY - rect.height - 10);
+        menu.style.top = newTop + 'px';
+      }
+    });
 
     const isMine = msg.sender_public_id === this.state.currentUserId;
     menu.querySelector('[data-action="edit"]').style.display = isMine ? 'block' : 'none';
@@ -1031,6 +1066,7 @@ const ChatApp = {
 
   async handleMessageAction(action, msg) {
     const isMine = msg.sender_public_id === this.state.currentUserId;
+    let shouldClose = true;
 
     if (action === 'reply') {
       this.state.replyToMessage = msg;
@@ -1058,6 +1094,7 @@ const ChatApp = {
       this.showSuccess('Copied to clipboard');
     } else if (action === 'forward') {
       this.showForwardDialog(msg);
+      shouldClose = false; // Don't close yet, let forward dialog handle it
     } else if (action === 'delete') {
       if (!isMine) return this.showError('Can only delete your own messages');
       if (confirm('Delete message?')) {
@@ -1075,9 +1112,23 @@ const ChatApp = {
       }
     } else if (action === 'react') {
       this.showReactionPicker(msg);
+      shouldClose = false; // Don't close, let reaction picker stay visible
     }
 
-    this.dom.msgContextMenu.style.display = 'none';
+    // Close menu with animation
+    if (shouldClose) {
+      const menu = this.dom.msgContextMenu;
+      menu.classList.add('slide-out');
+      setTimeout(() => {
+        menu.style.display = 'none';
+        menu.classList.remove('slide-out');
+        // Clear background highlight
+        if (window.currentMessageWrapper) {
+          window.currentMessageWrapper.style.backgroundColor = '';
+          window.currentMessageWrapper = null;
+        }
+      }, 200);
+    }
   },
 
   async showForwardDialog(msg) {
