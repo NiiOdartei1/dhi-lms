@@ -239,6 +239,50 @@ def get_conversations():
     result = [conversation_to_dict(conv, current_user.public_id) for conv in conversations]
     return jsonify(result), 200
 
+
+@chat_bp.route('/programmes', methods=['GET'])
+@login_required
+def get_programmes():
+    """Return available programme names and level choices for frontend selectors."""
+    from utils.helpers import get_programme_choices, get_level_choices
+    if not is_user_or_admin():
+        return jsonify({'error': 'Access denied'}), 403
+
+    programmes = [p for (p, _) in get_programme_choices()]
+    levels = [lv for (lv, label) in get_level_choices()]
+    return jsonify({'programmes': programmes, 'levels': levels}), 200
+
+
+@chat_bp.route('/students_by_programme', methods=['GET'])
+@login_required
+def students_by_programme():
+    """Return users (students/teachers) filtered by programme and level."""
+    if not is_user_or_admin():
+        return jsonify({'error': 'Access denied'}), 403
+
+    programme = request.args.get('programme')
+    level = request.args.get('level')
+    if not programme or not level:
+        return jsonify({'error': 'Missing parameters'}), 400
+
+    try:
+        lvl_int = int(level)
+    except:
+        return jsonify({'error': 'Invalid level'}), 400
+
+    # Join User -> StudentProfile to get users in programme+level
+    students = []
+    from models import User, StudentProfile
+    users = User.query.join(StudentProfile, User.user_id == StudentProfile.user_id) \
+        .filter(StudentProfile.current_programme == programme, StudentProfile.programme_level == lvl_int) \
+        .order_by(User.first_name, User.last_name) \
+        .all()
+
+    for u in users:
+        students.append({'public_id': getattr(u, 'public_id', None), 'name': getattr(u, 'full_name', getattr(u, 'username', 'Unknown'))})
+
+    return jsonify({'students': students}), 200
+
 @chat_bp.route('/conversations/<int:conv_id>/messages', methods=['GET'])
 @login_required
 def get_messages(conv_id):
@@ -374,17 +418,9 @@ def mark_read():
         db.session.commit()
     return jsonify({"success": True}), 200
 
-@chat_bp.route('/programmes')
-@login_required
-def get_programmes():
-    """Get all programmes (used for filtering students in chat)."""
-    if not is_user_or_admin():
-        return jsonify({"error": "Access denied"}), 403
-    
-    # Get unique programmes from StudentProfile
-    programmes = db.session.query(StudentProfile.current_programme).distinct().all()
-    result = [{"name": p[0]} for p in programmes if p[0]]
-    return jsonify(result), 200
+# NOTE: Programmes are provided by the `/programmes` route defined earlier
+# which returns programmes and levels together. The older distinct-programme
+# endpoint was removed to avoid duplicate endpoint names.
 
 @chat_bp.route('/levels')
 @login_required

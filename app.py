@@ -18,6 +18,7 @@ from flask import Flask, render_template, redirect, url_for, flash, request, abo
 from sqlalchemy import Table
 from werkzeug.utils import secure_filename
 from dotenv import load_dotenv
+load_dotenv()
 from models import Admin, StudentProfile, User
 
 if os.environ.get("FLASK_ENV") == "production":
@@ -41,8 +42,8 @@ app = Flask(__name__)
 app.config.from_object(Config)
 
 # ===== Paths =====
-DB_PATH = os.path.join(app.instance_path, "lms.db")
-app.config['SQLALCHEMY_DATABASE_URI'] = f"sqlite:///{DB_PATH}"
+# Leave SQLALCHEMY_DATABASE_URI to be provided by `Config` (or DATABASE_URL).
+# Ensure session and upload folders are configured.
 app.config.setdefault('SESSION_TYPE', 'sqlalchemy')
 app.config['SESSION_SQLALCHEMY'] = db
 app.config.setdefault('SESSION_SQLALCHEMY_TABLE', 'sessions')
@@ -71,7 +72,6 @@ db.init_app(app)
 mail.init_app(app)
 migrate = Migrate(app, db)
 csrf = CSRFProtect(app)
-load_dotenv()
 
 IS_PRODUCTION = os.environ.get("FLASK_ENV") == "production"
 SOCKETIO_ASYNC_MODE = "eventlet" if IS_PRODUCTION else "threading"
@@ -324,6 +324,15 @@ def list_routes():
     from urllib.parse import unquote
     lines = [f"{rule.endpoint:30s} → {unquote(str(rule))}" for rule in app.url_map.iter_rules()]
     return "<pre>" + "\n".join(sorted(lines)) + "</pre>"
+
+
+@app.route('/health')
+def health():
+    """Lightweight health check for load balancers and Render."""
+    try:
+        return jsonify(status='ok', service='lms', now=datetime.utcnow().isoformat()), 200
+    except Exception:
+        return jsonify(status='error'), 500
 
 # ===== Run =====
 if __name__ == "__main__":

@@ -14,6 +14,7 @@ from sqlalchemy import and_, or_
 from sqlalchemy.ext.hybrid import hybrid_property
 from utils.extensions import db
 
+
 """
 FIXED ADMIN MODEL
 The issue: @property role was overriding the role column
