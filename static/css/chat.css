@@ -3033,3 +3033,54 @@ body.dark-mode .left-head h5 {
   from { transform: translateX(-50%) rotate(0deg); }
   to { transform: translateX(-50%) rotate(360deg); }
 }
+
+/* ===== FORWARD DIALOG STYLES ===== */
+#modalConvoList {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+#modalConvoList > div[style*="background: #f5f5f5"] {
+  background: linear-gradient(135deg, #f9f9ff, #f5f7ff) !important;
+  border-left-color: #3b82f6 !important;
+  border-radius: 8px;
+  padding: 12px !important;
+}
+
+#modalConvoList > div[style*="overflow-y: auto"] {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+#modalConvoList label {
+  position: relative;
+  background: #ffffff;
+  border-radius: 8px;
+  margin: 0 !important;
+  transition: all 0.2s ease;
+}
+
+#modalConvoList label:last-child {
+  border-bottom: none !important;
+}
+
+#modalConvoList label:hover {
+  background: #f3f4f6 !important;
+  padding-left: 14px !important;
+}
+
+#modalConvoList input[type="radio"] {
+  accent-color: #3b82f6;
+  cursor: pointer;
+}
+
+#modalConvoList input[type="radio"]:checked {
+  accent-color: #2563eb;
+}
+
+#modalConvoList input[type="radio"]:checked ~ div {
+  color: #1f2937;
+  font-weight: 500;
+}

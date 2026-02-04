@@ -1141,30 +1141,61 @@ const ChatApp = {
     if (!modal) console.error('❌ Modal not found');
     if (!confirm) console.error('❌ Confirm button not found');
     
-    title.textContent = 'Forward To';
+    title.textContent = '📤 Forward Message';
     
-    // Build conversation list
+    // Show message preview
+    const previewHTML = `
+      <div style="background: #f5f5f5; padding: 10px; border-radius: 6px; margin-bottom: 15px; border-left: 3px solid #007bff;">
+        <strong style="display: block; font-size: 0.9em; color: #666; margin-bottom: 5px;">Message to forward:</strong>
+        <p style="margin: 0; padding: 8px; background: white; border-radius: 4px; word-break: break-word;">${this.escapeHtml(msg.content)}</p>
+      </div>
+    `;
+    
+    // Build conversation list with better styling
     const filteredConvos = this.state.conversations.filter(c => c.id !== this.state.currentConversationId);
     console.log(`📋 ${filteredConvos.length} conversations available to forward to`);
     
+    let convoHTML = previewHTML;
     if (filteredConvos.length === 0) {
-      convoList.innerHTML = '<p style="padding: 10px; color: #999;">No other conversations available</p>';
+      convoHTML += '<p style="padding: 15px; text-align: center; color: #999; background: #f9f9f9; border-radius: 6px;">No other conversations available</p>';
     } else {
-      convoList.innerHTML = filteredConvos.map(c => {
-        const other = c.participants.find(p => p.user_public_id !== this.state.currentUserId) || c.participants[0];
-        return `<label style="display: block; padding: 10px; cursor: pointer; border-radius: 4px; border: 1px solid #ddd; margin-bottom: 6px; transition: all 0.2s;">
-          <input type="radio" name="forward_convo" value="${c.id}" style="margin-right: 8px;">
-          <strong>${c.name || other?.name || 'Chat'}</strong>
-          ${c.type === 'group' ? ` (${c.participants?.length || 0} members)` : ''}
-        </label>`;
-      }).join('');
+      convoHTML += `
+        <div style="margin-bottom: 10px;">
+          <strong style="display: block; margin-bottom: 8px; color: #333;">Select conversation to forward to:</strong>
+          <div style="max-height: 300px; overflow-y: auto; border: 1px solid #ddd; border-radius: 6px;">
+            ${filteredConvos.map((c, idx) => {
+              const other = c.participants.find(p => p.user_public_id !== this.state.currentUserId) || c.participants[0];
+              const displayName = c.name || other?.name || 'Chat';
+              const lastMsg = c.last_message ? `${c.last_message.sender_name}: ${c.last_message.content.substring(0, 40)}${c.last_message.content.length > 40 ? '...' : ''}` : 'No messages yet';
+              const isGroup = c.type === 'group';
+              
+              return `
+                <label style="display: flex; align-items: center; padding: 12px; cursor: pointer; border-bottom: 1px solid #eee; transition: all 0.2s; background: white;" 
+                       onmouseover="this.style.backgroundColor='#f9f9f9'" 
+                       onmouseout="this.style.backgroundColor='white'">
+                  <input type="radio" name="forward_convo" value="${c.id}" style="margin-right: 12px; cursor: pointer; width: 18px; height: 18px;">
+                  <div style="flex: 1; min-width: 0;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
+                      <strong style="color: #333;">${this.escapeHtml(displayName)}</strong>
+                      ${isGroup ? `<span style="font-size: 0.8em; color: #999; background: #f0f0f0; padding: 2px 6px; border-radius: 3px; margin-left: 6px;">${c.participants?.length || 0} members</span>` : ''}
+                    </div>
+                    <p style="margin: 0; font-size: 0.85em; color: #999; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${this.escapeHtml(lastMsg)}</p>
+                  </div>
+                </label>
+              `;
+            }).join('')}
+          </div>
+        </div>
+      `;
     }
+    
+    convoList.innerHTML = convoHTML;
     
     document.getElementById('modalInput').style.display = 'none';
     document.getElementById('modalConfirmText').textContent = '';
     modal.style.display = 'block';
     
-    confirm.textContent = 'Forward';
+    confirm.textContent = 'Forward Message';
     
     // Clone to remove old listeners
     const newConfirmBtn = confirm.cloneNode(true);
@@ -1284,6 +1315,14 @@ const ChatApp = {
     } else {
       this.dom.replyDiv.style.display = 'none';
     }
+  },
+
+  // ===== UTILITY METHODS =====
+  escapeHtml(text) {
+    if (!text) return '';
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
   },
 
   // ===== PRESENCE =====
