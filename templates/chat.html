@@ -1089,5 +1089,63 @@
       headers: { 'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').content }
     }).then(r => r.json());
   }
+
+  // ========================================
+  // MODAL CLOSE HANDLERS
+  // ========================================
+  
+  // Modal cancel button
+  document.getElementById('modalCancel')?.addEventListener('click', () => {
+    const modal = document.getElementById('msgActionModal');
+    modal.classList.remove('show');
+    setTimeout(() => {
+      modal.style.display = 'none';
+    }, 300);
+  });
+
+  // Modal backdrop click
+  const msgActionModal = document.getElementById('msgActionModal');
+  if (msgActionModal) {
+    const backdrop = msgActionModal.querySelector('.modal-backdrop');
+    if (backdrop) {
+      backdrop.addEventListener('click', () => {
+        msgActionModal.classList.remove('show');
+        setTimeout(() => {
+          msgActionModal.style.display = 'none';
+        }, 300);
+      });
+    }
+  }
+
+  // Close menus when clicking elsewhere
+  document.addEventListener('click', (e) => {
+    const convMenu = document.getElementById('convContextMenu');
+    const msgMenu = document.getElementById('msgContextMenu');
+    const modal = document.getElementById('msgActionModal');
+
+    // Close conversation menu
+    if (convMenu && !e.target.closest('.conv-item') && !e.target.closest('#convContextMenu')) {
+      convMenu.style.display = 'none';
+      document.querySelectorAll('.conv-item').forEach(item => {
+        item.style.backgroundColor = '';
+      });
+    }
+
+    // Close message menu
+    if (msgMenu && !e.target.closest('.message-item') && !e.target.closest('#msgContextMenu')) {
+      msgMenu.style.display = 'none';
+      document.querySelectorAll('.message-item').forEach(item => {
+        item.style.backgroundColor = '';
+      });
+    }
+
+    // Close modal on outside click (if showing)
+    if (modal && modal.style.display !== 'none' && e.target === modal) {
+      modal.classList.remove('show');
+      setTimeout(() => {
+        modal.style.display = 'none';
+      }, 300);
+    }
+  });
 </script>
 {% endblock %}

@@ -1193,7 +1193,11 @@ const ChatApp = {
     
     document.getElementById('modalInput').style.display = 'none';
     document.getElementById('modalConfirmText').textContent = '';
-    modal.style.display = 'block';
+    modal.style.display = 'flex';
+    // Add show class for animations
+    requestAnimationFrame(() => {
+      modal.classList.add('show');
+    });
     
     confirm.textContent = 'Forward Message';
     
@@ -1236,7 +1240,10 @@ const ChatApp = {
         
         if (data.success) {
           this.showSuccess('Message forwarded!');
-          modal.style.display = 'none';
+          modal.classList.remove('show');
+          setTimeout(() => {
+            modal.style.display = 'none';
+          }, 300);
           this.loadConversations();
         } else {
           this.showError(data.error || 'Forward failed');
