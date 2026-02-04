@@ -1093,7 +1093,19 @@ const ChatApp = {
       navigator.clipboard.writeText(msg.content);
       this.showSuccess('Copied to clipboard');
     } else if (action === 'forward') {
-      this.showForwardDialog(msg);
+      // Close the message menu first
+      const msgMenu = this.dom.msgContextMenu;
+      if (msgMenu) {
+        msgMenu.classList.add('slide-out');
+        setTimeout(() => {
+          msgMenu.style.display = 'none';
+          msgMenu.classList.remove('slide-out');
+        }, 200);
+      }
+      // Then show forward dialog
+      setTimeout(() => {
+        this.showForwardDialog(msg);
+      }, 250);
       shouldClose = false; // Don't close yet, let forward dialog handle it
     } else if (action === 'delete') {
       if (!isMine) return this.showError('Can only delete your own messages');
@@ -1133,129 +1145,159 @@ const ChatApp = {
 
   async showForwardDialog(msg) {
     console.log('📤 Forward dialog opening', {msg});
-    const modal = document.getElementById('msgActionModal');
-    const title = document.getElementById('modalTitle');
-    const convoList = document.getElementById('modalConvoList');
-    const confirm = document.getElementById('modalConfirm');
-    
-    if (!modal) console.error('❌ Modal not found');
-    if (!confirm) console.error('❌ Confirm button not found');
-    
-    title.textContent = '📤 Forward Message';
-    
-    // Show message preview
-    const previewHTML = `
-      <div style="background: #f5f5f5; padding: 10px; border-radius: 6px; margin-bottom: 15px; border-left: 3px solid #007bff;">
-        <strong style="display: block; font-size: 0.9em; color: #666; margin-bottom: 5px;">Message to forward:</strong>
-        <p style="margin: 0; padding: 8px; background: white; border-radius: 4px; word-break: break-word;">${this.escapeHtml(msg.content)}</p>
-      </div>
-    `;
-    
-    // Build conversation list with better styling
-    const filteredConvos = this.state.conversations.filter(c => c.id !== this.state.currentConversationId);
-    console.log(`📋 ${filteredConvos.length} conversations available to forward to`);
-    
-    let convoHTML = previewHTML;
-    if (filteredConvos.length === 0) {
-      convoHTML += '<p style="padding: 15px; text-align: center; color: #999; background: #f9f9f9; border-radius: 6px;">No other conversations available</p>';
-    } else {
-      convoHTML += `
-        <div style="margin-bottom: 10px;">
-          <strong style="display: block; margin-bottom: 8px; color: #333;">Select conversation to forward to:</strong>
-          <div style="max-height: 300px; overflow-y: auto; border: 1px solid #ddd; border-radius: 6px;">
-            ${filteredConvos.map((c, idx) => {
-              const other = c.participants.find(p => p.user_public_id !== this.state.currentUserId) || c.participants[0];
-              const displayName = c.name || other?.name || 'Chat';
-              const lastMsg = c.last_message ? `${c.last_message.sender_name}: ${c.last_message.content.substring(0, 40)}${c.last_message.content.length > 40 ? '...' : ''}` : 'No messages yet';
-              const isGroup = c.type === 'group';
-              
-              return `
-                <label style="display: flex; align-items: center; padding: 12px; cursor: pointer; border-bottom: 1px solid #eee; transition: all 0.2s; background: white;" 
-                       onmouseover="this.style.backgroundColor='#f9f9f9'" 
-                       onmouseout="this.style.backgroundColor='white'">
-                  <input type="radio" name="forward_convo" value="${c.id}" style="margin-right: 12px; cursor: pointer; width: 18px; height: 18px;">
-                  <div style="flex: 1; min-width: 0;">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
-                      <strong style="color: #333;">${this.escapeHtml(displayName)}</strong>
-                      ${isGroup ? `<span style="font-size: 0.8em; color: #999; background: #f0f0f0; padding: 2px 6px; border-radius: 3px; margin-left: 6px;">${c.participants?.length || 0} members</span>` : ''}
-                    </div>
-                    <p style="margin: 0; font-size: 0.85em; color: #999; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${this.escapeHtml(lastMsg)}</p>
-                  </div>
-                </label>
-              `;
-            }).join('')}
-          </div>
-        </div>
-      `;
-    }
-    
-    convoList.innerHTML = convoHTML;
-    
-    document.getElementById('modalInput').style.display = 'none';
-    document.getElementById('modalConfirmText').textContent = '';
-    modal.style.display = 'flex';
-    // Add show class for animations
-    requestAnimationFrame(() => {
-      modal.classList.add('show');
-    });
-    
-    confirm.textContent = 'Forward Message';
-    
-    // Clone to remove old listeners
-    const newConfirmBtn = confirm.cloneNode(true);
-    confirm.parentNode.replaceChild(newConfirmBtn, confirm);
-    const confirmBtn = document.getElementById('modalConfirm');
-    
-    // Add event listener
-    const forwardHandler = async (e) => {
-      console.log('🔔 Forward button clicked');
-      e.preventDefault();
-      e.stopPropagation();
+    try {
+      const modal = document.getElementById('msgActionModal');
+      const title = document.getElementById('modalTitle');
+      const convoList = document.getElementById('modalConvoList');
+      const confirm = document.getElementById('modalConfirm');
       
-      const targetConvoId = document.querySelector('input[name="forward_convo"]:checked')?.value;
-      console.log('Target:', targetConvoId);
-      
-      if (!targetConvoId) {
-        this.showError('Select a conversation');
+      if (!modal) {
+        console.error('❌ Modal not found');
+        this.showError('Dialog not found');
+        return;
+      }
+      if (!confirm) {
+        console.error('❌ Confirm button not found');
+        this.showError('Button not found');
         return;
       }
       
-      try {
-        const csrf = document.querySelector('meta[name="csrf-token"]').content;
-        const messageBody = {
-          message: `[Forwarded] ${msg.content}`,
-          reply_to_message_id: null
-        };
-        console.log('📤 Sending:', messageBody);
-        
-        const res = await fetch(`/chat/conversations/${targetConvoId}/messages`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf },
-          body: JSON.stringify(messageBody)
-        });
-        
-        console.log('Response:', res.status);
-        const data = await res.json();
-        console.log('Response data:', data);
-        
-        if (data.success) {
-          this.showSuccess('Message forwarded!');
-          modal.classList.remove('show');
-          setTimeout(() => {
-            modal.style.display = 'none';
-          }, 300);
-          this.loadConversations();
-        } else {
-          this.showError(data.error || 'Forward failed');
-        }
-      } catch (err) {
-        console.error('Forward error:', err);
-        this.showError('Error: ' + err.message);
+      // Clear modal first
+      modal.className = 'modal'; // Reset all classes
+      
+      title.textContent = '📤 Forward Message';
+      
+      // Show message preview
+      const previewHTML = `
+        <div style="background: #f5f5f5; padding: 10px; border-radius: 6px; margin-bottom: 15px; border-left: 3px solid #007bff;">
+          <strong style="display: block; font-size: 0.9em; color: #666; margin-bottom: 5px;">Message to forward:</strong>
+          <p style="margin: 0; padding: 8px; background: white; border-radius: 4px; word-break: break-word;">${this.escapeHtml(msg.content)}</p>
+        </div>
+      `;
+      
+      // Build conversation list with better styling
+      const filteredConvos = this.state.conversations.filter(c => c.id !== this.state.currentConversationId);
+      console.log(`📋 ${filteredConvos.length} conversations available to forward to`);
+      
+      let convoHTML = previewHTML;
+      if (filteredConvos.length === 0) {
+        convoHTML += '<p style="padding: 15px; text-align: center; color: #999; background: #f9f9f9; border-radius: 6px;">No other conversations available</p>';
+      } else {
+        convoHTML += `
+          <div style="margin-bottom: 10px;">
+            <strong style="display: block; margin-bottom: 8px; color: #333;">Select conversation to forward to:</strong>
+            <div style="max-height: 300px; overflow-y: auto; border: 1px solid #ddd; border-radius: 6px;">
+              ${filteredConvos.map((c, idx) => {
+                const other = c.participants.find(p => p.user_public_id !== this.state.currentUserId) || c.participants[0];
+                const displayName = c.name || other?.name || 'Chat';
+                const lastMsg = c.last_message ? `${c.last_message.sender_name}: ${c.last_message.content.substring(0, 40)}${c.last_message.content.length > 40 ? '...' : ''}` : 'No messages yet';
+                const isGroup = c.type === 'group';
+                
+                return `
+                  <label style="display: flex; align-items: center; padding: 12px; cursor: pointer; border-bottom: 1px solid #eee; transition: all 0.2s; background: white;" 
+                         onmouseover="this.style.backgroundColor='#f9f9f9'" 
+                         onmouseout="this.style.backgroundColor='white'">
+                    <input type="radio" name="forward_convo" value="${c.id}" style="margin-right: 12px; cursor: pointer; width: 18px; height: 18px;">
+                    <div style="flex: 1; min-width: 0;">
+                      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
+                        <strong style="color: #333;">${this.escapeHtml(displayName)}</strong>
+                        ${isGroup ? `<span style="font-size: 0.8em; color: #999; background: #f0f0f0; padding: 2px 6px; border-radius: 3px; margin-left: 6px;">${c.participants?.length || 0} members</span>` : ''}
+                      </div>
+                      <p style="margin: 0; font-size: 0.85em; color: #999; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${this.escapeHtml(lastMsg)}</p>
+                    </div>
+                  </label>
+                `;
+              }).join('')}
+            </div>
+          </div>
+        `;
       }
-    };
-    
-    confirmBtn.addEventListener('click', forwardHandler);
-    console.log('✅ Forward handler attached');
+      
+      convoList.innerHTML = convoHTML;
+      
+      // Hide other elements
+      const modalInput = document.getElementById('modalInput');
+      const modalConfirmText = document.getElementById('modalConfirmText');
+      if (modalInput) modalInput.style.display = 'none';
+      if (modalConfirmText) modalConfirmText.textContent = '';
+      
+      // Show modal
+      modal.style.display = 'flex';
+      modal.style.visibility = 'visible';
+      modal.style.opacity = '1';
+      
+      // Add show class for animations
+      setTimeout(() => {
+        modal.classList.add('show');
+      }, 10);
+      
+      confirm.textContent = 'Forward Message';
+      
+      // Clone to remove old listeners
+      const newConfirmBtn = confirm.cloneNode(true);
+      confirm.parentNode.replaceChild(newConfirmBtn, confirm);
+      const confirmBtn = document.getElementById('modalConfirm');
+      
+      // Create properly bound handler
+      const self = this;
+      const forwardHandler = async (e) => {
+        try {
+          console.log('🔔 Forward button clicked');
+          e.preventDefault();
+          e.stopPropagation();
+          e.returnValue = false;
+          
+          const targetConvoId = document.querySelector('input[name="forward_convo"]:checked')?.value;
+          console.log('Target:', targetConvoId);
+          
+          if (!targetConvoId) {
+            self.showError('Select a conversation');
+            return;
+          }
+          
+          const csrf = document.querySelector('meta[name="csrf-token"]').content;
+          const messageBody = {
+            message: `[Forwarded] ${msg.content}`,
+            reply_to_message_id: null
+          };
+          console.log('📤 Sending:', messageBody);
+          
+          const res = await fetch(`/chat/conversations/${targetConvoId}/messages`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf },
+            body: JSON.stringify(messageBody)
+          });
+          
+          console.log('Response:', res.status);
+          const data = await res.json();
+          console.log('Response data:', data);
+          
+          if (data.success) {
+            self.showSuccess('Message forwarded!');
+            modal.classList.remove('show');
+            setTimeout(() => {
+              modal.style.display = 'none';
+              modal.style.visibility = 'hidden';
+            }, 300);
+            setTimeout(() => {
+              self.loadConversations();
+            }, 100);
+          } else {
+            self.showError(data.error || 'Forward failed');
+          }
+        } catch (err) {
+          console.error('Forward error:', err);
+          self.showError('Error: ' + err.message);
+        }
+      };
+      
+      confirmBtn.addEventListener('click', forwardHandler, { once: false });
+      console.log('✅ Forward handler attached');
+    } catch (err) {
+      console.error('❌ showForwardDialog error:', err);
+      this.showError('Failed to open forward dialog');
+    }
+  },
   },
 
   async showReactionPicker(msg) {
