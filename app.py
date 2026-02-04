@@ -38,6 +38,23 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 app.config.from_object(Config)
 
+IS_PRODUCTION = bool(
+    app.config.get("IS_PRODUCTION")
+    or os.environ.get("IS_PRODUCTION") in ("1", "true", "True")
+    or app.config.get("ENV", "").lower() == "production"
+)
+
+# Ensure eventlet is imported only if installed. Fallback to threading if not.
+try:
+    import eventlet  # pip install eventlet
+    # Only monkey-patch if we intend to use eventlet (avoid unnecessary patching)
+    if IS_PRODUCTION:
+        eventlet.monkey_patch()
+    SOCKETIO_ASYNC_MODE = "eventlet" if IS_PRODUCTION else "threading"
+except Exception:
+    # eventlet not available — use threading which is safe for development
+    SOCKETIO_ASYNC_MODE = "threading"
+    
 # ===== Paths =====
 # Leave SQLALCHEMY_DATABASE_URI to be provided by `Config` (or DATABASE_URL).
 app.config.setdefault('UPLOAD_FOLDER', os.path.join(app.instance_path, 'uploads'))
@@ -67,7 +84,7 @@ migrate = Migrate(app, db)
 csrf = CSRFProtect(app)
 
 # ===== SocketIO =====
-    eventlet.monkey_patch()
+eventlet.monkey_patch()
 SOCKETIO_ASYNC_MODE = "eventlet" if IS_PRODUCTION else "threading"
 logger.info("SocketIO async_mode=%s", SOCKETIO_ASYNC_MODE)
 socketio.init_app(app, async_mode=SOCKETIO_ASYNC_MODE, manage_session=False)
