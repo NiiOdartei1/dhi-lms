@@ -1,1 +1,207 @@
-python-3.9.13
+python-3.9.13#academic_period_service.py
+from models import SemesterResultRelease
+
+class AcademicPeriodService:
+
+    @staticmethod
+    def get_current_released():
+        """
+        Returns the latest released academic year & semester
+        """
+        return (
+            SemesterResultRelease.query
+            .filter_by(is_released=True)
+            .order_by(SemesterResultRelease.released_at.desc())
+            .first()
+        )
+
+#assessment_engine.py
+class AssessmentEngine:
+    @staticmethod
+    def percent(score, max_score):
+        if score is None or not max_score or max_score <= 0:
+            return 0.0
+        return round((score / max_score) * 100, 2)
+
+#grade_service.py
+from models import GradingScale
+
+class GradeService:
+    @staticmethod
+    def get_grade(percent):
+        if percent is None:
+            return None
+
+        return (
+            GradingScale.query
+            .filter(GradingScale.min_score <= percent)
+            .filter(GradingScale.max_score >= percent)
+            .first()
+        )
+
+#result_builder.py
+from services.academic_period_service import AcademicPeriodService
+from services.result_engine import UniversityResultEngine
+from models import Course, StudentCourseRegistration
+
+
+class ResultBuilder:
+
+    @staticmethod
+    def semester(student_id, academic_year=None, semester=None):
+
+        # Resolve academic period dynamically
+        if not academic_year or not semester:
+            release = AcademicPeriodService.get_current_released()
+            if not release:
+                return {
+                    "results": [],
+                    "academic_year": None,
+                    "semester": None,
+                    "released": False
+                }
+
+            academic_year = release.academic_year
+            semester = release.semester
+
+        courses = (
+            Course.query
+            .join(StudentCourseRegistration)
+            .filter(
+                StudentCourseRegistration.student_id == student_id,
+                Course.academic_year == academic_year,
+                Course.semester == semester
+            )
+            .all()
+        )
+
+        results = []
+        for course in courses:
+            cr = UniversityResultEngine.compute_course(student_id, course)
+            if cr:
+                results.append(cr)
+
+        return {
+            "results": results,
+            "academic_year": academic_year,
+            "semester": semester,
+            "released": True
+        }
+
+    @staticmethod
+    def transcript(student_id):
+        # Get all courses for the student
+        from models import Course, StudentCourseRegistration
+        registrations = StudentCourseRegistration.query.filter_by(student_id=student_id).all()
+        course_ids = [r.course_id for r in registrations]
+        courses = Course.query.filter(Course.id.in_(course_ids)).all()
+
+        # Group by academic_year and semester
+        grouped = {}
+        all_grades = []
+        for course in courses:
+            key = (course.academic_year, course.semester)
+            if key not in grouped:
+                grouped[key] = []
+            cr = UniversityResultEngine.compute_course(student_id, course)
+            if cr:
+                grouped[key].append(cr)
+                if "grade" in cr:
+                    all_grades.append(cr["grade"])
+
+        # Calculate overall GPA
+        gpa_mapping = {"A": 4, "B": 3, "C": 2, "D": 1, "F": 0}
+        if all_grades:
+            total_points = sum(gpa_mapping.get(grade, 0) for grade in all_grades)
+            overall_gpa = total_points / len(all_grades)
+        else:
+            overall_gpa = 0.0
+
+        return {
+            "records": grouped,
+            "overall_gpa": round(overall_gpa, 2)
+        }
+
+from models import (
+    Quiz, StudentQuizSubmission,
+    Assignment, AssignmentSubmission,
+    Exam, ExamSubmission, CourseAssessmentScheme
+)
+from services.grade_service import GradeService
+
+
+class UniversityResultEngine:
+
+    @staticmethod
+    def compute_course(student_id, course):
+        scheme = CourseAssessmentScheme.query.filter_by(course_id=course.id).first()
+        if not scheme:
+            return None
+
+        # --- CATEGORY TOTALS ---
+        quiz_score, quiz_max = UniversityResultEngine._quiz_totals(student_id, course)
+        ass_score, ass_max = UniversityResultEngine._assignment_totals(student_id, course)
+        exam_score, exam_max = UniversityResultEngine._exam_totals(student_id, course)
+
+        # --- APPLY WEIGHTS (OUT OF 100) ---
+        quiz_weighted = (quiz_score / quiz_max) * scheme.quiz_weight if quiz_max else 0
+        ass_weighted = (ass_score / ass_max) * scheme.assignment_weight if ass_max else 0
+        exam_weighted = (exam_score / exam_max) * scheme.exam_weight if exam_max else 0
+
+        final_score = round(quiz_weighted + ass_weighted + exam_weighted, 2)
+
+        grade = GradeService.get_grade(final_score)
+
+        return {
+            "course": course,
+            "score": final_score,
+            "grade": grade.grade_letter if grade else None,
+            "grade_point": grade.grade_point if grade else 0.0,
+            "pass_fail": grade.pass_fail if grade else None,
+            "credit_hours": course.credit_hours,
+            "points": (grade.grade_point if grade else 0.0) * course.credit_hours
+        }
+
+    # ---------------- CATEGORY TOTALS ---------------- #
+
+    @staticmethod
+    def _quiz_totals(student_id, course):
+        subs = (
+            StudentQuizSubmission.query
+            .join(Quiz)
+            .filter(
+                StudentQuizSubmission.student_id == student_id,
+                Quiz.course_id == course.id
+            ).all()
+        )
+        total_score = sum(s.score for s in subs if s.score is not None)
+        total_max = sum(s.quiz.max_score for s in subs)
+        return total_score, total_max
+
+    @staticmethod
+    def _assignment_totals(student_id, course):
+        subs = (
+            AssignmentSubmission.query
+            .join(Assignment)
+            .filter(
+                AssignmentSubmission.student_id == student_id,
+                Assignment.course_id == course.id
+            ).all()
+        )
+        total_score = sum(s.score for s in subs if s.score is not None)
+        total_max = sum(s.assignment.max_score for s in subs)
+        return total_score, total_max
+
+    @staticmethod
+    def _exam_totals(student_id, course):
+        subs = (
+            ExamSubmission.query
+            .join(Exam)
+            .filter(
+                ExamSubmission.student_id == student_id,
+                Exam.course_id == course.id
+            ).all()
+        )
+        total_score = sum(s.score for s in subs if s.score is not None)
+        total_max = sum(s.exam.max_score for s in subs)
+        return total_score, total_max

@@ -20,7 +20,7 @@ def can_request_password_reset(user, limit=3, period_minutes=60):
 @auth_bp.route('/forgot-password', methods=['GET', 'POST'])
 def forgot_password():
     form = ForgotPasswordForm()
-    portal = request.args.get('portal')  # e.g. 'student','teacher','parent','exam','vclass'
+    portal = request.args.get('portal')  # e.g. 'student','teacher','exam','vclass'
 
     if form.validate_on_submit():
         email = form.email.data.strip().lower()
@@ -60,7 +60,6 @@ def forgot_password():
         mapping = {
             'student': 'student.student_login',
             'teacher': 'teacher.teacher_login',
-            'parent':  'parent.parent_login',
             'exam':    'exam.exam_login',
             'vclass':  'vclass.vclass_login'
         }
@@ -98,7 +97,6 @@ def reset_password(token):
         portal_map = {
             'student': 'student.student_login',
             'teacher': 'teacher.teacher_login',
-            'parent':  'parent.parent_login',
             'exam':    'exam.exam_login',
             'vclass':  'vclass.vclass_login'
         }

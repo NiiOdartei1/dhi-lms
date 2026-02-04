@@ -2,9 +2,9 @@ from flask import Blueprint, current_app, render_template, abort, redirect, url_
 import json, os, mimetypes
 from flask import request
 from flask_login import login_required, current_user, login_user, logout_user
-from sqlalchemy import func
+from sqlalchemy import func, text, inspect
 from werkzeug.utils import safe_join, secure_filename
-from models import db, User, Quiz, StudentQuizSubmission, Question, StudentProfile, QuizAttempt, Assignment, CourseMaterial, StudentCourseRegistration, Course,  TimetableEntry, AcademicCalendar, AcademicYear, AppointmentSlot, AppointmentBooking, StudentFeeBalance, ClassFeeStructure, StudentFeeTransaction, Exam, ExamSubmission, ExamQuestion, ExamAttempt, ExamSet, ExamSetQuestion, Meeting, StudentAnswer, Recording, PasswordResetRequest, PasswordResetToken, AssignmentSubmission
+from models import QuizAttempt, db, User, Quiz, StudentQuizSubmission, Question, StudentProfile, Assignment, CourseMaterial, StudentCourseRegistration, Course,  TimetableEntry, AcademicCalendar, AcademicYear, AppointmentSlot, AppointmentBooking, StudentFeeBalance, ProgrammeFeeStructure, StudentFeeTransaction, Exam, ExamSubmission, ExamQuestion, ExamAttempt, ExamSet, ExamSetQuestion, Meeting, StudentAnswer, Recording, PasswordResetRequest, PasswordResetToken, AssignmentSubmission
 from datetime import date, datetime, timedelta, time
 from forms import StudentLoginForm, ForgotPasswordForm, ResetPasswordForm
 from io import BytesIO
@@ -14,7 +14,8 @@ from reportlab.lib.units import inch
 from reportlab.lib import colors
 from reportlab.platypus import Table, TableStyle
 from utils.email import send_password_reset_email
-
+from sqlalchemy.orm import joinedload
+from flask_wtf.csrf import generate_csrf
 
 vclass_bp = Blueprint('vclass', __name__, url_prefix='/vclass')
 
@@ -159,6 +160,7 @@ def switch_to_student_courses():
 @vclass_bp.route('/dashboard')
 @login_required
 def dashboard():
+    """Virtual classroom dashboard for tertiary students"""
     if current_user.role != 'student':
         abort(403)
 
@@ -167,11 +169,17 @@ def dashboard():
         flash("Student profile not found.", "danger")
         return redirect(url_for("vclass.vclass_dashboard"))
 
-    student_class = profile.current_class
+    # Use programme and level instead of class
+    student_programme = profile.current_programme
+    student_level = str(profile.programme_level)
     now = datetime.utcnow()
 
     # --- Quizzes ---
-    quizzes = Quiz.query.filter_by(assigned_class=student_class).all()
+    quizzes = Quiz.query.filter(
+        Quiz.programme_name == student_programme,
+        Quiz.programme_level == student_level
+    ).all()
+    
     quiz_list = []
     for q in quizzes:
         status = 'Upcoming'
@@ -183,14 +191,18 @@ def dashboard():
             'id': q.id,
             'title': q.title,
             'course_name': q.course_name,
-            'start_datetime': q.start_datetime.isoformat(),  # full ISO string
-            'end_datetime': q.end_datetime.isoformat(),      # full ISO string
+            'start_datetime': q.start_datetime.isoformat(),
+            'end_datetime': q.end_datetime.isoformat(),
             'duration': q.duration_minutes,
             'is_active': q.start_datetime <= now <= q.end_datetime
         })
 
     # --- Assignments ---
-    assignments = Assignment.query.filter_by(assigned_class=student_class).all()
+    assignments = Assignment.query.filter(
+        Assignment.programme_name == student_programme,
+        Assignment.programme_level == student_level
+    ).all()
+    
     assignment_list = [{
         'id': a.id,
         'title': a.title,
@@ -203,7 +215,11 @@ def dashboard():
     } for a in assignments]
 
     # --- Course Materials ---
-    materials = CourseMaterial.query.filter_by(assigned_class=student_class).all()
+    materials = CourseMaterial.query.filter(
+        CourseMaterial.programme_name == student_programme,
+        CourseMaterial.programme_level == student_level
+    ).all()
+    
     material_list = [{
         'id': m.id,
         'title': m.title,
@@ -232,7 +248,8 @@ def dashboard():
             'title': f"{q.title} [{status}]",
             'start': q.start_datetime.isoformat(),
             'end': q.end_datetime.isoformat(),
-            'url': url_for('vclass.quiz_instructions', quiz_id=q.id),            'color': color,
+            'url': url_for('vclass.quiz_instructions', quiz_id=q.id),
+            'color': color,
             'extendedProps': {
                 'type': 'Quiz',
                 'status': status,
@@ -273,7 +290,7 @@ def dashboard():
             }
         )
 
-    # --- Academic Calendar Events (vacations, holidays, etc.) ---
+    # Academic Calendar Events
     ac_events = AcademicCalendar.query.order_by(AcademicCalendar.date).all()
     color_map = {
         'Vacation': '#e67e22',
@@ -296,7 +313,7 @@ def dashboard():
             }
         })
 
-    # Semester background (visual highlight)
+    # Semester background
     academic_year = AcademicYear.query.first()
     if academic_year:
         events.append({
@@ -316,6 +333,8 @@ def dashboard():
 
     return render_template(
         'vclass/dashboard.html',
+        programme=student_programme,
+        level=student_level,
         quizzes=quiz_list,
         assignments=assignment_list,
         materials=material_list,
@@ -334,42 +353,39 @@ def is_quiz_submission_allowed(quiz):
     # Allow submission only if current time <= quiz_end
     return now <= quiz_end
 
-# Quiz Instructions Page
+# Quiz instructions (single-shot)
 @vclass_bp.route('/quiz-instructions/<int:quiz_id>')
 @login_required
 def quiz_instructions(quiz_id):
     quiz = Quiz.query.get_or_404(quiz_id)
     now = datetime.utcnow()
 
+    if current_user.role != 'student':
+        abort(403)
+
     if now < quiz.start_datetime:
         flash("This quiz is not yet available.", "warning")
         return redirect(url_for('vclass.dashboard'))
 
     if now > quiz.end_datetime:
-        flash("This quiz is past its due date and can no longer be taken.", "danger")
+        flash("This quiz has ended and can no longer be taken.", "danger")
         return redirect(url_for('vclass.dashboard'))
 
-    if current_user.role != 'student':
-        abort(403)
+    # Check if already submitted (final, non-retakeable)
+    existing_submission = StudentQuizSubmission.query.filter_by(
+        quiz_id=quiz.id, student_id=current_user.id
+    ).first()
+    if existing_submission:
+        flash("You have already submitted this quiz.", "info")
+        return redirect(url_for('vclass.quiz_result', submission_id=existing_submission.id))
 
-    attempts_made = QuizAttempt.query.filter_by(
-        quiz_id=quiz.id,
-        student_id=current_user.id
-    ).count()
+    # ✅ SINGLE-SHOT: No previous submission = can attempt
+    attempts_made = 0
+    can_attempt = True
 
-    can_attempt = attempts_made < quiz.attempts_allowed
+    return render_template('vclass/quiz_instructions.html', quiz=quiz, attempts_made=attempts_made, can_attempt=can_attempt)
 
-    return render_template(
-        'vclass/quiz_instructions.html',
-        quiz=quiz,
-        attempts_made=attempts_made,
-        can_attempt=can_attempt
-    )
-
-from sqlalchemy.orm import joinedload
-
-from flask_wtf.csrf import generate_csrf
-
+# Take quiz (single-shot)
 @vclass_bp.route('/take-quiz/<int:quiz_id>')
 @login_required
 def take_quiz(quiz_id):
@@ -383,57 +399,74 @@ def take_quiz(quiz_id):
     now = datetime.utcnow()
     if now < quiz.start_datetime:
         flash("This quiz is not yet available.", "warning")
-        return redirect(url_for('vclass.virtual_class'))
+        return redirect(url_for('vclass.dashboard'))
     if now > quiz.end_datetime:
-        flash("This quiz is past its due date and can no longer be taken.", "danger")
-        return redirect(url_for('vclass.virtual_class'))
+        flash("This quiz has ended.", "danger")
+        return redirect(url_for('vclass.dashboard'))
 
-    attempts_made = QuizAttempt.query.filter_by(
+    # If a final submission exists -> cannot take
+    existing_submission = StudentQuizSubmission.query.filter_by(
         quiz_id=quiz.id, student_id=current_user.id
-    ).count()
-    if attempts_made >= quiz.attempts_allowed:
-        flash("You have reached the maximum number of attempts for this quiz.", "danger")
-        return redirect(url_for('vclass.quiz_instructions', quiz_id=quiz.id))
+    ).first()
+    if existing_submission:
+        flash("You have already submitted this quiz and cannot retake it.", "warning")
+        return redirect(url_for('vclass.quiz_result', submission_id=existing_submission.id))
 
+    # Get or create a single QuizAttempt for this student+quiz (used for autosave)
+    attempt = QuizAttempt.query.filter_by(
+        quiz_id=quiz.id,
+        student_id=current_user.id
+    ).first()
+    if not attempt:
+        attempt = QuizAttempt(
+            quiz_id=quiz.id,
+            student_id=current_user.id,
+            score=None,
+            submitted_at=None
+        )
+        db.session.add(attempt)
+        db.session.commit()  # ensure attempt.id available
+
+    # Build quiz payload (don't expose sensitive internals)
+    # ✅ IMPORTANT: Do NOT include correct_option_id - students must not see answers
     quiz_data = {
         "id": quiz.id,
         "title": quiz.title,
         "duration_minutes": quiz.duration_minutes,
+        "max_score": quiz.max_score,
         "questions": [
             {
                 "id": q.id,
                 "question_text": q.text,
                 "question_type": q.question_type,
-                "options": [{"id": opt.id, "text": opt.text} for opt in q.options]
-                          if q.question_type in ("mcq", "multiple_choice") else []
-            }
-            for q in Question.query.filter_by(quiz_id=quiz.id).all()  # force only current quiz
+                "marks": getattr(q, 'points', 1.0),
+                "options": [
+                    {"id": opt.id, "text": opt.text}
+                    for opt in sorted((q.options or []), key=lambda x: x.id)
+                ] if q.question_type in ("mcq", "multiple_choice", "MCQ") else []
+            } for q in (quiz.questions or [])
         ]
     }
 
+    # start timer in session if not already
     key = f'quiz_{quiz.id}_start_time'
     if key not in session:
         session[key] = datetime.utcnow().isoformat()
         session.modified = True
 
+    # Load previously autosaved answers for this attempt
     saved_qs = (
         StudentAnswer.query
-        .join(QuizAttempt, StudentAnswer.attempt_id == QuizAttempt.id)
-        .filter(
-            QuizAttempt.student_id == current_user.id,
-            QuizAttempt.quiz_id == quiz.id
-        )
+        .filter_by(attempt_id=attempt.id)
         .all()
     )
-
     saved_answers = {}
     for a in saved_qs:
         if a.selected_option_id is not None:
             saved_answers[a.question_id] = a.selected_option_id
         elif a.answer_text:
             try:
-                parsed = json.loads(a.answer_text)
-                saved_answers[a.question_id] = parsed
+                saved_answers[a.question_id] = json.loads(a.answer_text)
             except Exception:
                 saved_answers[a.question_id] = a.answer_text
 
@@ -443,239 +476,260 @@ def take_quiz(quiz_id):
         'vclass/take_quiz.html',
         quiz_json=quiz_data,
         questions=quiz.questions,
+        attempt=attempt,
         session=session,
         csrf_token_value=csrf_token_value,
         saved_answers=saved_answers
     )
 
 
-@vclass_bp.route('/start-quiz-timer/<int:quiz_id>', methods=['POST'], endpoint='start_quiz_timer')
+# Start quiz timer (AJAX) — sets session start time for a quiz
+@vclass_bp.route('/start_quiz_timer/<int:quiz_id>', methods=['POST'])
 @login_required
 def start_quiz_timer(quiz_id):
-    key = f'quiz_{quiz_id}_start_time'
-    if key not in session:
-        session[key] = datetime.utcnow().isoformat()
-        session.modified = True
-    return jsonify({'status': 'started'})
+    # Only students should start quiz timers
+    if getattr(current_user, 'role', None) != 'student':
+        abort(403)
 
+    quiz = Quiz.query.get_or_404(quiz_id)
+    now = datetime.utcnow()
 
+    # Ensure quiz is currently available
+    if now < quiz.start_datetime or now > quiz.end_datetime:
+        return jsonify({'ok': False, 'error': 'quiz not available'}), 400
+
+    key = f'quiz_{quiz.id}_start_time'
+    session[key] = datetime.utcnow().isoformat()
+    session.modified = True
+
+    return jsonify({'ok': True})
+
+# Autosave answer endpoint (single-shot)
 @vclass_bp.route('/autosave_answer', methods=['POST'])
 @login_required
 def autosave_answer():
     """
-    Accepts JSON payload:
-      { quiz_id, question_id, selected_option_id?, answer_text? }
-    The client must send X-CSRFToken header.
+    JSON: { quiz_id, question_id, selected_option_id?, answer_text? }
+    Saves to StudentAnswer tied to the single QuizAttempt for this student+quiz.
     """
+    if current_user.role != 'student':
+        return jsonify({'ok': False, 'error': 'only students'}), 403
+
     data = request.get_json(silent=True) or {}
     quiz_id = data.get('quiz_id')
-    qid = data.get('question_id')
+    question_id = data.get('question_id')
     selected_option_id = data.get('selected_option_id')
     answer_text = data.get('answer_text')
 
-    if isinstance(answer_text, (list, dict)):
-        answer_text = json.dumps(answer_text)
-
-    if not quiz_id or not qid:
+    if not quiz_id or not question_id:
         return jsonify({'ok': False, 'error': 'missing quiz_id or question_id'}), 400
 
-    ans = StudentAnswer.query.filter_by(
-        student_id=current_user.id, quiz_id=quiz_id, question_id=qid
-    ).first()
+    # If final submission exists -> disallow autosave
+    if StudentQuizSubmission.query.filter_by(quiz_id=quiz_id, student_id=current_user.id).first():
+        return jsonify({'ok': False, 'error': 'quiz already submitted'}), 400
 
+    # Ensure attempt exists
+    attempt = QuizAttempt.query.filter_by(quiz_id=quiz_id, student_id=current_user.id).first()
+    if not attempt:
+        attempt = QuizAttempt(quiz_id=quiz_id, student_id=current_user.id, score=None, submitted_at=None)
+        db.session.add(attempt)
+        db.session.flush()
+
+    if isinstance(answer_text, (dict, list)):
+        try:
+            answer_text = json.dumps(answer_text)
+        except Exception:
+            answer_text = str(answer_text)
+
+    ans = StudentAnswer.query.filter_by(attempt_id=attempt.id, question_id=question_id).first()
     if ans:
         ans.selected_option_id = selected_option_id
         ans.answer_text = answer_text
-        ans.saved_at = datetime.utcnow()
     else:
         ans = StudentAnswer(
-            student_id=current_user.id,
+            attempt_id=attempt.id,
+            question_id=question_id,
             quiz_id=quiz_id,
-            question_id=qid,
+            student_id=current_user.id,
             selected_option_id=selected_option_id,
             answer_text=answer_text
         )
         db.session.add(ans)
 
-    db.session.commit()
-    return jsonify({'ok': True})
+    try:
+        db.session.commit()
+        return jsonify({'ok': True})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'ok': False, 'error': str(e)}), 500
 
+# Get saved answers (for restore). Returns empty if already submitted.
 @vclass_bp.route('/get_saved_answers/<int:quiz_id>')
 @login_required
 def get_saved_answers(quiz_id):
     # If already submitted -> empty (no restore)
-    submitted = QuizAttempt.query.filter_by(quiz_id=quiz_id, student_id=current_user.id).count()
-    if submitted > 0:
+    if StudentQuizSubmission.query.filter_by(quiz_id=quiz_id, student_id=current_user.id).first():
         return jsonify({})
 
-    # Join StudentAnswer with QuizAttempt to filter by student and quiz
-    answers = (
-        db.session.query(StudentAnswer)
-        .join(QuizAttempt)
-        .filter(
-            QuizAttempt.student_id == current_user.id,
-            QuizAttempt.quiz_id == quiz_id
-        )
-        .all()
-    )
+    attempt = QuizAttempt.query.filter_by(quiz_id=quiz_id, student_id=current_user.id).first()
+    if not attempt:
+        return jsonify({})
 
+    answers = StudentAnswer.query.filter_by(attempt_id=attempt.id).all()
     result = {}
     for a in answers:
         if a.selected_option_id is not None:
             result[str(a.question_id)] = a.selected_option_id
         elif a.answer_text:
             try:
-                parsed = json.loads(a.answer_text)
-                result[str(a.question_id)] = parsed
+                result[str(a.question_id)] = json.loads(a.answer_text)
             except Exception:
                 result[str(a.question_id)] = a.answer_text
         else:
             result[str(a.question_id)] = ""
     return jsonify(result)
 
-from difflib import SequenceMatcher
-import json
-import re
-
-def is_number(s):
-    return bool(re.match(r'^\s*-?\d+(\.\d+)?\s*$', str(s)))
-
-def fuzzy_match(a, b, threshold=0.80):
-    return SequenceMatcher(None, a.lower().strip(), b.lower().strip()).ratio() >= threshold
-
+# Submit quiz (single-shot grading + submission record)
 @vclass_bp.route('/submit_quiz/<int:quiz_id>', methods=['POST'])
 @login_required
 def submit_quiz(quiz_id):
-    """
-    Final form POST (regular POST with csrf_token in hidden input).
-    This collects inputs, falls back to StudentAnswer rows where necessary.
-    Basic scoring: MCQ exact match, short_answer fuzzy match (placeholder).
-    """
+    if current_user.role != 'student':
+        abort(403)
+
     quiz = Quiz.query.options(joinedload(Quiz.questions).joinedload(Question.options)).get_or_404(quiz_id)
 
-    # prevent double attempts
-    attempts_made = QuizAttempt.query.filter_by(quiz_id=quiz_id, student_id=current_user.id).count()
-    if attempts_made >= quiz.attempts_allowed:
-        flash("No more attempts allowed.", "danger")
-        return redirect(url_for('vclass.quiz_instructions', quiz_id=quiz_id))
+    # Prevent double submission
+    if StudentQuizSubmission.query.filter_by(quiz_id=quiz.id, student_id=current_user.id).first():
+        flash("You have already submitted this quiz.", "warning")
+        return redirect(url_for('vclass.dashboard'))
 
-    # load autosaved DB answers for fallback
-    saved_answers_db = {str(a.question_id): a for a in StudentAnswer.query.join(QuizAttempt) .filter(QuizAttempt.student_id == current_user.id, QuizAttempt.quiz_id == quiz_id).all()}
+    # Attempt must exist (created on take_quiz/autosave)
+    attempt = QuizAttempt.query.filter_by(quiz_id=quiz.id, student_id=current_user.id).first()
+    if not attempt:
+        # Defensive: create a new attempt if none (rare)
+        attempt = QuizAttempt(quiz_id=quiz.id, student_id=current_user.id)
+        db.session.add(attempt)
+        db.session.flush()
 
-    def get_submitted_value(q):
-        # 1) check request form for blanks
-        blanks = request.form.getlist(f'answers[{q.id}][]')
-        if blanks and any([b.strip() for b in blanks]):
-            return blanks
-        # 2) single value from form
-        val = request.form.get(f'answers[{q.id}]')
+    # Ensure `is_correct` column exists (might be missing after model change)
+    try:
+        inspector = inspect(db.engine)
+        cols = [c['name'] for c in inspector.get_columns('student_answers')]
+        if 'is_correct' not in cols:
+            with db.engine.connect() as conn:
+                conn.execute(text("ALTER TABLE student_answers ADD COLUMN is_correct BOOLEAN DEFAULT 0"))
+    except Exception as _:
+        current_app.logger.debug('Could not ensure is_correct column exists: %s', _)
+
+    # Load posted answers; fallback to autosaved DB answers
+    saved_answers_db = { str(a.question_id): a for a in StudentAnswer.query.filter_by(attempt_id=attempt.id).all() }
+
+    def get_posted_val(qid):
+        # form may send multiple input formats: list or single
+        vals = request.form.getlist(f'answers[{qid}][]')
+        if vals and any(v != '' for v in vals):
+            return vals
+        val = request.form.get(f'answers[{qid}]')
         if val is not None and val != '':
             return val
-        # 3) fallback to DB saved
-        saved = saved_answers_db.get(str(q.id))
+        # fallback to saved DB
+        saved = saved_answers_db.get(str(qid))
         if saved:
-            if saved.selected_option_id is not None:
-                return saved.selected_option_id
-            if saved.answer_text:
-                try:
-                    p = json.loads(saved.answer_text)
-                    return p
-                except Exception:
-                    return saved.answer_text
+            return saved.selected_option_id if saved.selected_option_id is not None else (saved.answer_text or None)
         return None
 
-    # scoring loop (example: 1 point per MCQ correct; short answer uses simple case-insensitive equality / fuzzy_match function)
     score = 0.0
     total_possible = 0.0
 
+    # Build/update StudentAnswer rows and calculate score
     for q in quiz.questions:
-        qtype = (getattr(q, "question_type", "") or "mcq").lower()
-        total_possible += float(getattr(q, "points", 1.0) or 1.0)
+        q_marks = float(getattr(q, 'points', 1.0) or 1.0)
+        total_possible += q_marks
 
-        submitted = get_submitted_value(q)
-        if qtype in ("mcq", "multiple_choice"):
+        submitted = get_posted_val(q.id)
+        selected_option_id = None
+        answer_text = None
+        is_correct = False
+
+        if q.question_type in ("mcq", "multiple_choice", "MCQ"):
             try:
-                submitted_id = int(submitted) if submitted is not None and submitted != '' else None
-            except Exception:
-                submitted_id = None
-            correct_option = next((opt for opt in q.options if opt.is_correct), None)
-            if correct_option and submitted_id == correct_option.id:
-                score += float(getattr(q, "points", 1.0) or 1.0)
+                if submitted is not None and submitted != '':
+                    selected_option_id = int(submitted)
+            except (ValueError, TypeError):
+                selected_option_id = None
 
-        elif qtype in ("short_answer", "manual", "text"):
-            correct_answer = ""
-            correct_opt = next((opt for opt in q.options if opt.is_correct), None)
-            if correct_opt:
-                correct_answer = (correct_opt.text or "").strip()
-            else:
-                correct_answer = (getattr(q, "correct_answer", "") or "").strip()
+            # Determine correct option id: prefer question.correct_option_id but
+            # fall back to any option marked `is_correct` for backward compatibility.
+            correct_opt_id = getattr(q, 'correct_option_id', None)
+            if correct_opt_id is None:
+                correct_opt = next((o for o in (q.options or []) if getattr(o, 'is_correct', False)), None)
+                if correct_opt:
+                    correct_opt_id = correct_opt.id
 
-            user_answer = (submitted or "") if not isinstance(submitted, list) else " ".join(submitted)
-            user_answer = (user_answer or "").strip()
-            if user_answer and correct_answer:
-                # exact or case-insensitive match OR simple substring fuzzy
-                if user_answer.lower() == correct_answer.lower() or correct_answer.lower() in user_answer.lower():
-                    score += float(getattr(q, "points", 1.0) or 1.0)
-                # else: you can add a fuzzy_match(...) call here
-
-        elif qtype in ("multi_blank", "multi"):
-            # correct answers stored as JSON list or "A||B||C"
-            raw_correct = getattr(q, "correct_answer", "") or ""
-            correct_list = []
-            try:
-                correct_list = json.loads(raw_correct) if raw_correct else []
-                if not isinstance(correct_list, list):
-                    correct_list = []
-            except Exception:
-                if raw_correct:
-                    correct_list = [p.strip() for p in raw_correct.split("||") if p.strip()]
-
-            user_vals = submitted if isinstance(submitted, list) else ([submitted] if submitted else [])
-            if correct_list and user_vals:
-                per_blank = (float(getattr(q, "points", 1.0) or 1.0) / len(correct_list))
-                matched = 0
-                for idx, corr in enumerate(correct_list):
-                    user_val = (user_vals[idx] if idx < len(user_vals) else "").strip()
-                    if not user_val:
-                        continue
-                    if corr.strip().lower() == user_val.lower():
-                        matched += 1
-                score += per_blank * matched
+            if selected_option_id is not None and correct_opt_id is not None and int(selected_option_id) == int(correct_opt_id):
+                score += q_marks
+                is_correct = True
 
         else:
-            # fallback treat as MCQ
-            try:
-                submitted_id = int(submitted) if submitted is not None and submitted != '' else None
-            except Exception:
-                submitted_id = None
-            correct_option = next((opt for opt in q.options if opt.is_correct), None)
-            if correct_option and submitted_id == correct_option.id:
-                score += float(getattr(q, "points", 1.0) or 1.0)
+            # treat as short answer / manual: compare exact if possible
+            if isinstance(submitted, list):
+                answer_text = json.dumps(submitted)
+            else:
+                answer_text = (submitted or "").strip()
 
-    # save submission + attempt
+            # quick auto-grade if question has correct_answer or an option marked correct
+            correct_answer = getattr(q, 'correct_answer', None) or None
+            if not correct_answer:
+                # try option marked correct
+                correct_opt = next((o for o in (q.options or []) if getattr(o, 'is_correct', False)), None)
+                if correct_opt:
+                    correct_answer = correct_opt.text
+
+            if correct_answer and answer_text:
+                if answer_text.lower() == correct_answer.strip().lower():
+                    score += q_marks
+                    is_correct = True
+                elif correct_answer.strip().lower() in answer_text.lower():
+                    # partial credit
+                    score += (q_marks * 0.5)
+                    is_correct = True
+
+        # persist StudentAnswer
+        existing = saved_answers_db.get(str(q.id))
+        if existing:
+            existing.selected_option_id = selected_option_id
+            existing.answer_text = answer_text
+            existing.is_correct = is_correct
+        else:
+            new_ans = StudentAnswer(
+                attempt_id=attempt.id,
+                question_id=q.id,
+                quiz_id=quiz.id,
+                student_id=current_user.id,
+                selected_option_id=selected_option_id,
+                answer_text=answer_text,
+                is_correct=is_correct
+            )
+            db.session.add(new_ans)
+
+    # Finalize attempt and submission
+    attempt.score = round(score, 2)
+    attempt.submitted_at = datetime.utcnow()
+    db.session.flush()
+
     submission = StudentQuizSubmission(
         student_id=current_user.id,
         quiz_id=quiz.id,
-        score=score,
+        score=round(score, 2),
         submitted_at=datetime.utcnow()
     )
     db.session.add(submission)
-
-    attempt = QuizAttempt(
-        student_id=current_user.id,
-        quiz_id=quiz.id,
-        score=score,
-        submitted_at=datetime.utcnow()
-    )
-    db.session.add(attempt)
-
-    # optional: mark StudentAnswer rows as attached to attempt (if you have attempt_id FK)
     db.session.commit()
 
-    # clear session timer
+    # clear timer session
     session.pop(f'quiz_{quiz.id}_start_time', None)
 
-    flash("Quiz submitted successfully.", "success")
+    flash(f"Quiz submitted! Your score: {round(score,2)}/{round(total_possible,2)}", "success")
     return redirect(url_for('vclass.quiz_result', submission_id=submission.id))
 
 @vclass_bp.route('/has-submitted/<int:quiz_id>')
@@ -695,6 +749,85 @@ def quiz_result(submission_id):
 
     return render_template('vclass/quiz_result.html', quiz=quiz, submission=submission)
 
+@vclass_bp.route('/grade-quiz-attempt/<int:attempt_id>', methods=['POST'])
+@login_required
+def grade_quiz_attempt(attempt_id):
+    """Grade a completed quiz attempt."""
+    attempt = QuizAttempt.query.get_or_404(attempt_id)
+    
+    # Verify permission
+    if current_user.id != attempt.quiz.course.instructor_id and current_user.role != 'admin':
+        abort(403)
+
+    quiz = attempt.quiz
+    total_score = 0
+    max_score = 0
+
+    # Grade each question
+    for question in quiz.questions:
+        max_score += question.marks or 0
+        
+        # Get student's answer for this question
+        student_answer = StudentAnswer.query.filter_by(
+            attempt_id=attempt_id,
+            question_id=question.id
+        ).first()
+
+        if not student_answer:
+            continue
+
+        # Grade based on question type
+        if question.question_type in ('mcq', 'multiple_choice', 'MCQ'):
+            # ✅ CORRECT: Compare student's selected option with correct option
+            if student_answer.selected_option_id == question.correct_option_id:
+                total_score += question.marks or 0
+                student_answer.is_correct = True
+            else:
+                student_answer.is_correct = False
+        
+        elif question.question_type in ('fill_blank', 'multi_blank', 'fill_in', 'fill-in'):
+            # For fill-in-the-blank, you might need manual grading or keyword matching
+            # This is more complex - implement as needed
+            pass
+        
+        elif question.question_type in ('manual', 'short_answer', 'text'):
+            # These require manual grading by teacher
+            pass
+
+        db.session.commit()
+
+    # Store final score
+    attempt.score = total_score
+    attempt.max_score = max_score
+    attempt.graded_at = datetime.utcnow()
+    attempt.is_graded = True
+    db.session.commit()
+
+    # Create/update StudentQuizSubmission for final grade
+    submission = StudentQuizSubmission.query.filter_by(
+        student_id=attempt.student_id,
+        quiz_id=attempt.quiz_id
+    ).first()
+
+    if not submission:
+        submission = StudentQuizSubmission(
+            student_id=attempt.student_id,
+            quiz_id=attempt.quiz_id
+        )
+        db.session.add(submission)
+
+    submission.score = total_score
+    submission.max_score = max_score
+    submission.is_graded = True
+    submission.graded_at = datetime.utcnow()
+    db.session.commit()
+
+    return jsonify({
+        "success": True,
+        "score": total_score,
+        "max_score": max_score,
+        "percentage": (total_score / max_score * 100) if max_score > 0 else 0
+    })
 
 @vclass_bp.route('/download/assignments/<filename>')
 @login_required
@@ -799,12 +932,13 @@ def materials_by_course(course_name):
     # convert models to json-serializable dicts (JS expects uploaded_at)
     material_list = []
     for m in rows:
-        uploaded_iso = m.upload_date.isoformat() if getattr(m, 'upload_date', None) else None
+        uploaded_iso = m.upload_date.isoformat() if m.upload_date else None
         material_list.append({
             "id": m.id,
             "title": m.title,
             "course_name": m.course_name,
-            "assigned_class": m.assigned_class,
+            "programme_name": m.programme_name,      # <-- use this instead
+            "programme_level": m.programme_level,    # <-- use this instead
             "filename": m.filename,
             "original_name": m.original_name,
             "file_type": m.file_type,

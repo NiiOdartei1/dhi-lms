@@ -96,11 +96,13 @@
             <strong>Passport Photo</strong>
         </div>
         <div class="card-body text-center">
-            {% if session.get('uploaded_passport') %}
+            {% set photo = application.documents | selectattr("document_type", "equalto", "photo") | first %}
+
+            {% if photo %}
                 <img 
-                    src="{{ url_for('admissions.static', filename='uploads/' ~ session['applicant_id'] ~ '/' ~ session['uploaded_passport']) }}" 
-                    class="img-fluid rounded shadow" 
-                    style="max-width: 180px; box-shadow: 0 8px 16px rgba(0,0,0,0.3); transform: translateY(-2px); transition: all 0.3s;"
+                    src="{{ url_for('static', filename=photo.file_path) }}"
+                    class="img-fluid rounded shadow"
+                    style="max-width:180px;"
                     alt="Passport Photo"
                 >
             {% else %}
@@ -121,10 +123,16 @@
     </div>
 
     <!-- ACTION BUTTONS -->
-    <div class="d-flex justify-content-between mb-5">
-        <a href="{{ url_for('admissions.application_step', step=1) }}" class="btn btn-outline-secondary">Edit Application</a>
+<div class="d-flex justify-content-between mb-5">
+    <a href="{{ url_for('admissions.application_step', step=1) }}" class="btn btn-outline-secondary">Edit Application</a>
+    
+    {% if application.status.lower() == 'approved' %}
+        <button class="btn btn-success" disabled>Proceed to Declaration</button>
+    {% else %}
         <a href="{{ url_for('admissions.declaration') }}" class="btn btn-success">Proceed to Declaration</a>
-    </div>
+    {% endif %}
+</div>
+
 </div>
 <style>
     img:hover {

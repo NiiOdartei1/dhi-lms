@@ -4,13 +4,19 @@
 {% block content %}
 <style>
   body {
-    background: linear-gradient(135deg, #6a11cb 0%, #2575fc 100%);
     min-height: 100vh;
     display: flex;
     justify-content: center;
     align-items: center;
     font-family: "Poppins", sans-serif;
+
+    /* Background image + overlay + gradient blend */
+    background:
+      linear-gradient(rgba(0,0,0,0.55), rgba(0,0,0,0.55)), /* dark overlay */
+      url("https://i.postimg.cc/x1nWRzPh/exam-background.jpg") center/cover no-repeat,
+      linear-gradient(135deg, #6a11cb 0%, #2575fc 100%);
   }
+
   .card-custom {
     background: #fff;
     border-radius: 20px;

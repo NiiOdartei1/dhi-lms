@@ -32,45 +32,93 @@ class Application(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     applicant_id = db.Column(db.Integer, db.ForeignKey('applicant.id'), nullable=False, unique=True)
 
+    # -------------------
     # Personal info
-    title = db.Column(db.String(10), nullable=True)
-    surname = db.Column(db.String(100), nullable=True)
-    other_names = db.Column(db.String(150), nullable=True)
-    gender = db.Column(db.String(10), nullable=True)
-    dob = db.Column(db.Date, nullable=True)
-    nationality = db.Column(db.String(50), nullable=True)
-    marital_status = db.Column(db.String(20), nullable=True)
-    home_region = db.Column(db.String(50), nullable=True)
-    phone = db.Column(db.String(20), nullable=True)
-    email = db.Column(db.String(120), nullable=True)
-    postal_address = db.Column(db.String(255), nullable=True)
+    # -------------------
+    title = db.Column(db.String(10))
+    surname = db.Column(db.String(100))        # LAST NAME
+    first_name = db.Column(db.String(100))    # FIRST NAME  <-- ADD
+    other_names = db.Column(db.String(150))   # MIDDLE / OTHER
+    gender = db.Column(db.String(10))
+    dob = db.Column(db.Date)
+    nationality = db.Column(db.String(50))
+    marital_status = db.Column(db.String(20))
+    home_region = db.Column(db.String(50))
+    phone = db.Column(db.String(20))
+    email = db.Column(db.String(120))
+    postal_address = db.Column(db.String(255))
 
+    # -------------------
     # Guardian info
-    guardian_name = db.Column(db.String(150), nullable=True)
-    guardian_relation = db.Column(db.String(50), nullable=True)
-    guardian_occupation = db.Column(db.String(100), nullable=True)
-    guardian_phone = db.Column(db.String(20), nullable=True)
-    guardian_email = db.Column(db.String(120), nullable=True)
-    guardian_address = db.Column(db.String(255), nullable=True)
+    # -------------------
+    guardian_name = db.Column(db.String(150))
+    guardian_relation = db.Column(db.String(50))
+    guardian_occupation = db.Column(db.String(100))
+    guardian_phone = db.Column(db.String(20))
+    guardian_email = db.Column(db.String(120))
+    guardian_address = db.Column(db.String(255))
 
+    # -------------------
     # Programme choices
-    first_choice = db.Column(db.String(100), nullable=True)
-    first_stream = db.Column(db.String(50), nullable=True)
-    second_choice = db.Column(db.String(100), nullable=True)
-    second_stream = db.Column(db.String(50), nullable=True)
-    third_choice = db.Column(db.String(100), nullable=True)
-    third_stream = db.Column(db.String(50), nullable=True)
-    fourth_choice = db.Column(db.String(100), nullable=True)
-    fourth_stream = db.Column(db.String(50), nullable=True)
+    # -------------------
+    first_choice = db.Column(db.String(100))
+    first_stream = db.Column(db.String(50))
 
+    second_choice = db.Column(db.String(100))
+    second_stream = db.Column(db.String(50))
+
+    third_choice = db.Column(db.String(100))
+    third_stream = db.Column(db.String(50))
+
+    # -------------------
+    # Sponsor info
+    # -------------------
+    sponsor_name = db.Column(db.String(150))
+    sponsor_relation = db.Column(db.String(50))
+
+    # -------------------
+    # Exam info (SSSCE / WASSCE)
+    # -------------------
+    exam_type = db.Column(db.String(20))      # WASSCE / SSSCE
+    sitting = db.Column(db.String(30))        # May/June, Nov/Dec
+
+    # First sitting (required)
+    first_index = db.Column(db.String(50))
+    first_year = db.Column(db.String(4))
+
+    # Second sitting (optional)
+    second_index = db.Column(db.String(50))
+    second_year = db.Column(db.String(4))
+
+    # Third sitting (optional)
+    third_index = db.Column(db.String(50))
+    third_year = db.Column(db.String(4))
+
+    # -------------------
     # Application lifecycle
+    # -------------------
     status = db.Column(db.String(30), default='draft')
     submitted_at = db.Column(db.DateTime)
 
+    # Admin decision
+    admitted_programme = db.Column(db.String(100))  # what they were offered
+    admitted_stream = db.Column(db.String(50))
+    admitted_academic_year = db.Column(db.String(20))
+    admitted_semester = db.Column(db.String(10))
+    admission_letter_generated = db.Column(db.Boolean, default=False)
+    acceptance_letter_generated = db.Column(db.Boolean, default=False)
+
+    # -------------------
     # Relationships
+    # -------------------
     documents = db.relationship('ApplicationDocument', backref='application', cascade='all, delete-orphan')
+
     exam_results = db.relationship('ApplicationResult', backref='application', cascade='all, delete-orphan')
 
+    @property
+    def full_name(self):
+        parts = [self.surname, self.first_name, self.other_names]
+        return " ".join([p for p in parts if p])
 
 class ApplicationDocument(db.Model):
     __tablename__ = 'application_document'

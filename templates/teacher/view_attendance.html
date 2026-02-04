@@ -1,3 +1,7 @@
+<!-- ===================================================================== -->
+<!-- TEACHER: VIEW ATTENDANCE (Tertiary Version - Programme & Level) -->
+<!-- ===================================================================== -->
+
 {% extends 'teacher/base_teacher.html' %}
 {% block title %}View Attendance{% endblock %}
 
@@ -12,19 +16,29 @@
     </div>
 
     <div class="card-body">
-      <!-- Filters -->
+      <!-- Filters (TERTIARY: Programme & Level) -->
       <form class="row g-3 mb-4" method="GET" action="{{ url_for('teacher.view_attendance') }}">
-        <div class="col-md-5">
-          <label class="form-label"><i class="fas fa-chalkboard"></i> Class</label>
-          <select name="classSelect" class="form-select" onchange="this.form.submit()">
-            <option value="">-- All Classes --</option>
-            {% for cls in classes %}
-              <option value="{{ cls }}" {% if cls == selected_class %}selected{% endif %}>{{ cls }}</option>
+        <div class="col-md-4">
+          <label class="form-label"><i class="fas fa-book-medical"></i> Programme</label>
+          <select name="programmeSelect" class="form-select" onchange="this.form.submit()">
+            <option value="">-- All Programmes --</option>
+            {% for prog in programmes %}
+              <option value="{{ prog }}" {% if prog == selected_programme %}selected{% endif %}>{{ prog }}</option>
             {% endfor %}
           </select>
         </div>
 
-        <div class="col-md-5">
+        <div class="col-md-4">
+          <label class="form-label"><i class="fas fa-layer-group"></i> Level</label>
+          <select name="levelSelect" class="form-select" onchange="this.form.submit()">
+            <option value="">-- All Levels --</option>
+            {% for lvl in levels %}
+              <option value="{{ lvl }}" {% if lvl == selected_level %}selected{% endif %}>Level {{ lvl }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="col-md-4">
           <label class="form-label"><i class="fas fa-calendar-day"></i> Date</label>
           <select name="date" class="form-select" onchange="this.form.submit()">
             <option value="">-- All Dates --</option>
@@ -45,7 +59,8 @@
             <tr>
               <th>#</th>
               <th>Date</th>
-              <th>Class</th>
+              <th>Programme</th>
+              <th>Level</th>
               <th>Student</th>
               <th>Status</th>
             </tr>
@@ -55,7 +70,8 @@
             <tr>
               <td>{{ loop.index }}</td>
               <td>{{ r.date.strftime('%b %d, %Y') }}</td>
-              <td>{{ r.current_class }}</td>
+              <td>{{ r.programme }}</td>
+              <td>Level {{ r.level }}</td>
               <td>{{ r.full_name }}</td>
               <td>
                 {% if r.is_present %}
@@ -77,8 +93,8 @@
         <table class="table table-bordered table-sm align-middle text-center" style="min-width: 800px;">
           <thead class="table-light">
             <tr>
-              <th style="position: sticky; left: 0; background: #f8f9fa; z-index: 2; width: 200px;" class="text-start">
-                Student
+              <th style="position: sticky; left: 0; background: #f8f9fa; z-index: 2; width: 250px;" class="text-start">
+                Student (Programme - Level)
               </th>
               {% for d in dates %}
                 <th>{{ d.strftime('%b %d') }}</th>
@@ -88,8 +104,9 @@
           <tbody>
             {% for student in students %}
             <tr>
-              <td style="position: sticky; left: 0; background: white; z-index: 1;" class="text-start">
-                {{ student.full_name }}
+              <td style="position: sticky; left: 0; background: white; z-index: 1;" class="text-start text-truncate">
+                {{ student.full_name }}<br>
+                <small class="text-muted">{{ student.programme }} - Level {{ student.level }}</small>
               </td>
               {% for d in dates %}
                 {% set val = attendance_map.get((student.id, d), 0) %}
@@ -107,7 +124,7 @@
         </table>
       </div>
       {% else %}
-      <div class="alert alert-info mt-3">No attendance data available for the selected class.</div>
+      <div class="alert alert-info mt-3">No attendance data available for the selected programme/level.</div>
       {% endif %}
     </div>
   </div>

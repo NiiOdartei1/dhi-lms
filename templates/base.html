@@ -88,6 +88,16 @@
       <div class="collapse navbar-collapse justify-content-end" id="navbarMenu">
         <ul class="navbar-nav align-items-lg-center">
           {% if current_user.is_authenticated %}
+            <!-- Notification Bell -->
+            <li class="nav-item me-2">
+              <a class="btn btn-outline-light btn-sm position-relative" href="{{ url_for('notifications.list_notifications') }}" title="Notifications">
+                <i class="bi bi-bell-fill"></i>
+                <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger" id="notif-badge" style="display: none; font-size: 0.65rem;">
+                  <span id="notif-count">0</span>
+                </span>
+              </a>
+            </li>
+            
             <li class="nav-item me-2">
               <a class="btn btn-outline-light btn-sm" href="{{ url_for('logout') }}">
                 <i class="bi bi-box-arrow-right"></i> Logout
@@ -110,6 +120,39 @@
       </div>
     </div>
   </nav>
+
+  <!-- Notification Badge Update Script -->
+  <script>
+    {% if current_user.is_authenticated %}
+    // Update notification count every 30 seconds
+    function updateNotificationCount() {
+        fetch('/notifications/api/count')
+            .then(response => response.json())
+            .then(data => {
+                const count = data.count || 0;
+                const badge = document.getElementById('notif-badge');
+                const countEl = document.getElementById('notif-count');
+                if (countEl) {
+                    countEl.textContent = count;
+                    if (badge) {
+                        badge.style.display = count > 0 ? 'block' : 'none';
+                    }
+                }
+            })
+            .catch(err => console.error('Notification update failed:', err));
+    }
+    
+    // Check on page load
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', updateNotificationCount);
+    } else {
+        updateNotificationCount();
+    }
+    
+    // Check every 30 seconds
+    setInterval(updateNotificationCount, 30000);
+    {% endif %}
+  </script>
 
   <!-- Main Content -->
   <div class="container mt-1">

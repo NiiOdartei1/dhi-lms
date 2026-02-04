@@ -8,8 +8,9 @@
   <div class="card shadow-sm mb-4">
     <div class="card-body">
       <!-- Quiz Info -->
-      <p><strong>Course:</strong> {{ quiz.subject }}</p>
-      <p><strong>Assigned Class:</strong> {{ quiz.assigned_class }}</p>
+      <p><strong>Course:</strong> {{ quiz.course_name }}</p>
+      <p><strong>Programme:</strong> {{ quiz.programme_name or '-' }}</p>
+      <p><strong>Level:</strong> {{ quiz.programme_level or '-' }}</p>
       <p><strong>Scheduled Date:</strong> {{ quiz.start_datetime.strftime('%B %d, %Y') }}</p>
       <p><strong>Start Time:</strong> {{ quiz.start_datetime.strftime('%I:%M %p') }}</p>
       <p><strong>End Time:</strong> {{ quiz.end_datetime.strftime('%I:%M %p') }}</p>

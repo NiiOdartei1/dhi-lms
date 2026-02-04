@@ -40,14 +40,14 @@
             {% for txn in transactions %}
             <tr class="text-center align-middle">
               <td>{{ txn.student.full_name }}</td>
-              <td>{{ txn.academic_year }}</td>
+              <td>{{ txn.academic_year|start_year }}</td>
               <td>{{ txn.semester }}</td>
               <td><strong>{{ "%.2f"|format(txn.amount) }}</strong></td>
               <td>{{ txn.description }}</td>
               <td>
                 {% if txn.proof_filename %}
-                  <a href="{{ url_for('static', filename='uploads/payments/' ~ txn.proof_filename) }}" target="_blank" 
-                     class="btn btn-sm btn-outline-info">
+                  <a href="{{ url_for('static', filename='payments/' ~ txn.student_id ~ '/' ~ txn.proof_filename) }}" target="_blank" 
+                    class="btn btn-sm btn-outline-info">
                     <i class="fas fa-eye"></i>
                   </a>
                 {% else %}
@@ -62,17 +62,26 @@
                 {% endif %}
               </td>
               <td>
-                {% if not txn.is_approved %}
-                <form method="POST" action="{{ url_for('admin.approve_payment', txn_id=txn.id) }}" class="d-inline">
-                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                  <button class="btn btn-sm btn-success">
-                    <i class="fas fa-check"></i>
-                  </button>
-                </form>
-                {% else %}
-                  <span class="text-muted">-</span>
-                {% endif %}
-              </td>
+  {% if not txn.is_approved %}
+    <form method="POST" action="{{ url_for('admin.approve_payment', txn_id=txn.id) }}" class="d-inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button class="btn btn-sm btn-success" title="Approve">
+        <i class="fas fa-check"></i>
+      </button>
+    </form>
+
+    <form method="POST" action="{{ url_for('admin.reject_payment', txn_id=txn.id) }}" class="d-inline ms-1">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <!-- Optional: add a prompt for reason if you want; for now it uses default reason -->
+      <button class="btn btn-sm btn-danger" title="Reject" onclick="return confirm('Reject this payment?');">
+        <i class="fas fa-times"></i>
+      </button>
+    </form>
+  {% else %}
+    <span class="text-muted">-</span>
+  {% endif %}
+</td>
+
             </tr>
             {% endfor %}
           </tbody>

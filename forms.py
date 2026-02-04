@@ -3,8 +3,9 @@ from wtforms import HiddenField, StringField, PasswordField, SubmitField, Select
 from wtforms.validators import DataRequired, Length, InputRequired, Email, Optional, NumberRange, EqualTo, ValidationError
 from wtforms.fields import DateTimeLocalField, DateTimeField
 from flask_wtf.file import FileField, FileAllowed, FileRequired
-from utils.helpers import get_class_choices
+from utils.helpers import get_programme_choices
 from datetime import datetime
+
 
 class AdminLoginForm(FlaskForm):
     username = StringField("Username", validators=[DataRequired()])
@@ -24,126 +25,183 @@ class TeacherLoginForm(FlaskForm):
     password = PasswordField("Password", validators=[DataRequired()])
     submit = SubmitField("Login")
 
-class ParentLoginForm(FlaskForm):
-    username = StringField('Username', validators=[DataRequired()])
-    user_id = StringField("Parent ID", validators=[DataRequired(), Length(min=3, max=20)])
-    password = PasswordField("Password", validators=[DataRequired()])
-    submit = SubmitField("Login")
-
 class ExamLoginForm(FlaskForm):
     user_id = StringField("Student ID", validators=[DataRequired()])
     password = PasswordField("Password", validators=[DataRequired()])
     submit = SubmitField("Login")
 
+"""
+Enhanced AdminRegisterForm - Supports both Teacher and Admin registration
+Superadmin can create Finance Admins and other admin roles with granular permissions
+"""
+
+from flask_wtf import FlaskForm
+from wtforms import StringField, PasswordField, SelectField, DateField, IntegerField, FileField, SubmitField, BooleanField, TextAreaField
+from wtforms.validators import InputRequired, Optional, Length, Email, NumberRange, DataRequired
+from flask_wtf.file import FileAllowed
+
+
 class AdminRegisterForm(FlaskForm):
-    # 🔹 Core User fields
-    first_name = StringField('First Name', validators=[InputRequired(), Length(min=1, max=100)])
-    middle_name = StringField('Middle Name', validators=[Optional(), Length(max=100)])
-    last_name = StringField('Last Name', validators=[InputRequired(), Length(min=1, max=100)])
+    """Form for Superadmin to create Finance Admin accounts"""
+    
+    # ============================
+    # Core Admin User Fields
+    # ============================
+    first_name = StringField(
+        'First Name',
+        validators=[InputRequired(message='First name is required'), Length(min=1, max=100)]
+    )
+    
+    middle_name = StringField(
+        'Middle Name',
+        validators=[Optional(), Length(max=100)]
+    )
+    
+    last_name = StringField(
+        'Last Name',
+        validators=[InputRequired(message='Last name is required'), Length(min=1, max=100)]
+    )
+    
+    # Profile picture - optional for admin
     profile_picture = FileField(
-        "Profile Picture",
+        'Profile Picture',
         validators=[
-            FileRequired(message="Profile picture is required."),
-            FileAllowed(["jpg", "jpeg", "png", "gif"], "Images only!")
+            FileAllowed(['jpg', 'jpeg', 'png', 'gif', 'webp'], 'Images only!')
         ]
     )
-    role = SelectField('Role', choices=[
-        ('', 'Select Role'),
-        ('student', 'Student'),
-        ('teacher', 'Teacher'),
-        ('parent', 'Parent')
-    ], validators=[InputRequired()])
-
-    username = StringField('Username', validators=[InputRequired(), Length(min=3, max=100)])
-    email = StringField('Login Email', validators=[InputRequired(), Email(), Length(max=120)])
-    password = PasswordField('Temporary Password', validators=[InputRequired(), Length(min=6)])
-
-    # 🔹 Shared (Student/Teacher/Parent)
-    dob = DateField('Date of Birth', format='%Y-%m-%d', validators=[Optional()])
-    gender = SelectField('Gender', choices=[
-        ('', 'Select Gender'),
-        ('Male', 'Male'),
-        ('Female', 'Female'),
-        ('Other', 'Other')
-    ], validators=[Optional()])
-    nationality = StringField('Nationality', validators=[Optional(), Length(max=50)])
-
+    
     # ============================
-    # Student-specific profile
+    # Admin Role Selection
     # ============================
-    religion = StringField('Religion', validators=[Optional(), Length(max=50)])
-    blood_group = StringField('Blood Group', validators=[Optional(), Length(max=10)])
-    medical_conditions = TextAreaField('Medical Conditions', validators=[Optional()])
-    guardian_name = StringField('Guardian Name', validators=[Optional(), Length(max=100)])
-    guardian_relation = StringField('Guardian Relation', validators=[Optional(), Length(max=50)])
-    guardian_contact = StringField('Guardian Contact', validators=[Optional(), Length(max=20)])
-    previous_school = StringField('Previous School', validators=[Optional(), Length(max=150)])
-    last_class_completed = StringField('Last Class Completed', validators=[Optional(), Length(max=50)])
-    academic_performance = StringField('Academic Performance', validators=[Optional(), Length(max=100)])
-    current_class = SelectField('Desired Class', choices=get_class_choices(), validators=[Optional()])
-    academic_year = StringField('Academic Year', validators=[Optional(), Length(max=20)])
-    preferred_second_language = StringField('Preferred Second Language', validators=[Optional(), Length(max=50)])
-    sibling_name = StringField('Sibling Name', validators=[Optional(), Length(max=100)])
-    sibling_class = StringField('Sibling Class', validators=[Optional(), Length(max=50)])
-    emergency_contact_name = StringField('Emergency Contact Name', validators=[Optional(), Length(max=100)])
-    emergency_contact_number = StringField('Emergency Contact Number', validators=[Optional(), Length(max=20)])
-    # Contact info (mapped to StudentProfile, not User)
-    student_phone = StringField('Student Phone', validators=[Optional(), Length(max=20)])
-    student_address = StringField('Student Address', validators=[Optional()])
-    student_city = StringField('City', validators=[Optional(), Length(max=50)])
-    student_state = StringField('State', validators=[Optional(), Length(max=50)])
-    student_postal_code = StringField('Postal Code', validators=[Optional(), Length(max=20)])
-    student_contact_email = StringField('Student Contact Email (optional)', validators=[Optional(), Email(), Length(max=100)])
-
+    role = SelectField(
+        'Admin Role',
+        choices=[
+            ('finance_admin', 'Finance Admin'),
+            ('admissions_admin', 'Admissions Admin'),
+            ('academic_admin', 'Academic Admin'),
+        ],
+        validators=[InputRequired(message='Please select a role')]
+    )
+    
     # ============================
-    # Teacher-specific profile
+    # Login Credentials
     # ============================
-    employee_id = StringField('Employee ID', validators=[Optional(), Length(max=50)])
-    qualification = StringField('Qualification', validators=[Optional(), Length(max=100)])
-    specialization = StringField('Specialization', validators=[Optional(), Length(max=100)])
-    years_of_experience = IntegerField('Years of Experience', validators=[Optional(), NumberRange(min=0, max=100)])
-    subjects_taught = StringField('Subjects Taught (comma-separated)', validators=[Optional(), Length(max=200)])
-    employment_type = SelectField('Employment Type', choices=[
-        ('', 'Select Type'),
-        ('Full-time', 'Full-time'),
-        ('Part-time', 'Part-time'),
-        ('Contract', 'Contract')
-    ], validators=[Optional()])
-    department = StringField('Department', validators=[Optional(), Length(max=100)])
-    date_of_hire = DateField('Date of Hire', format='%Y-%m-%d', validators=[Optional()])
-    office_location = StringField('Office Location', validators=[Optional()])
-
+    email = StringField(
+        'Email (for login)',
+        validators=[InputRequired(message='Email is required'), Email(), Length(max=120)]
+    )
+    
+    password = PasswordField(
+        'Temporary Password',
+        validators=[InputRequired(message='Password is required'), Length(min=8, max=100)]
+    )
+    
     # ============================
-    # Parent-specific profile
+    # Personal Information
     # ============================
-    parent_dob = DateField('Date of Birth', format='%Y-%m-%d', validators=[Optional()])
-    parent_gender = SelectField('Parent Gender', choices=[
-        ('', 'Select Gender'),
-        ('Male', 'Male'),
-        ('Female', 'Female'),
-        ('Other', 'Other')
-    ], validators=[Optional()])
-    parent_nationality = StringField('Nationality', validators=[Optional(), Length(max=50)])
-    occupation = StringField('Occupation', validators=[Optional(), Length(max=100)])
-    education_level = StringField('Education Level', validators=[Optional(), Length(max=100)])
-    parent_contact_email = StringField('Parent Contact Email (optional)', validators=[Optional(), Email(), Length(max=120)])
-    phone_number = StringField('Parent Phone', validators=[Optional(), Length(max=20)])
-    parent_address = StringField('Parent Address', validators=[Optional()])
-    relationship_to_student = StringField('Relationship to Student', validators=[Optional(), Length(max=50)])
-    number_of_children = IntegerField('Number of Children', validators=[Optional(), NumberRange(min=0, max=20)])
-    emergency_contact_name_parent = StringField('Emergency Contact Name', validators=[Optional(), Length(max=100)])
-    emergency_contact_phone = StringField('Emergency Contact Phone', validators=[Optional(), Length(max=20)])
-    preferred_contact_method = SelectField('Preferred Contact Method', choices=[
-        ('', 'Select Method'),
-        ('Phone', 'Phone'),
-        ('Email', 'Email'),
-        ('SMS', 'SMS')
-    ], validators=[Optional()])
-    child_student_ids = SelectMultipleField('Select Child(ren)', choices=[], coerce=int, validators=[Optional()])
-
+    dob = DateField(
+        'Date of Birth',
+        format='%Y-%m-%d',
+        validators=[Optional()]
+    )
+    
+    gender = SelectField(
+        'Gender',
+        choices=[
+            ('', '— Select Gender —'),
+            ('Male', 'Male'),
+            ('Female', 'Female'),
+            ('Other', 'Other')
+        ],
+        validators=[Optional()]
+    )
+    
+    phone = StringField(
+        'Phone Number',
+        validators=[Optional(), Length(max=20)]
+    )
+    
+    nationality = StringField(
+        'Nationality',
+        validators=[Optional(), Length(max=50)]
+    )
+    
     # ============================
-    submit = SubmitField('Register User')
-
+    # Admin-Specific Information
+    # ============================
+    admin_id = StringField(
+        'Admin ID',
+        render_kw={'readonly': True},
+        validators=[Optional()]
+    )
+    
+    department = SelectField(
+        'Department/Office',
+        choices=[
+            ('', '— Select Department —'),
+            ('Finance', 'Finance'),
+            ('Admissions', 'Admissions'),
+            ('Academic Affairs', 'Academic Affairs'),
+            ('Administration', 'Administration'),
+            ('Human Resources', 'Human Resources'),
+        ],
+        validators=[InputRequired(message='Please select a department')]
+    )
+    
+    office_location = StringField(
+        'Office Location',
+        validators=[Optional(), Length(max=100)]
+    )
+    
+    job_title = StringField(
+        'Job Title',
+        validators=[InputRequired(message='Job title is required'), Length(min=1, max=100)]
+    )
+    
+    date_of_appointment = DateField(
+        'Date of Appointment',
+        format='%Y-%m-%d',
+        validators=[Optional()]
+    )
+    
+    # ============================
+    # Permissions (For Finance Admin)
+    # ============================
+    can_approve_payments = SelectField(
+        'Can Approve Payments?',
+        choices=[
+            ('', '— Select —'),
+            ('yes', 'Yes'),
+            ('no', 'No')
+        ],
+        validators=[Optional()]
+    )
+    
+    can_view_reports = SelectField(
+        'Can View Reports?',
+        choices=[
+            ('', '— Select —'),
+            ('yes', 'Yes'),
+            ('no', 'No')
+        ],
+        validators=[Optional()]
+    )
+    
+    can_manage_fees = SelectField(
+        'Can Manage Fees?',
+        choices=[
+            ('', '— Select —'),
+            ('yes', 'Yes'),
+            ('no', 'No')
+        ],
+        validators=[Optional()]
+    )
+    
+    # ============================
+    # Submit
+    # ============================
+    submit = SubmitField('Create Admin Account')
+        
 class ForgotPasswordForm(FlaskForm):
     # Ask the user for the email they registered with (recommended)
     email = StringField('Email', validators=[DataRequired(), Email(), Length(max=120)])
@@ -167,119 +225,292 @@ class ChangePasswordForm(FlaskForm):
     ])
     submit = SubmitField('Update Password')
     
+from wtforms import SelectField, StringField, IntegerField, SubmitField
+from wtforms.fields import DateTimeLocalField
+from wtforms.validators import DataRequired, Optional, NumberRange
+from flask_wtf import FlaskForm
+
+
 class QuizForm(FlaskForm):
-    assigned_class = SelectField('Assign to Class', choices=[
-        ('Primary 1', 'Primary 1'), ('Primary 2', 'Primary 2'), ('Primary 3', 'Primary 3'),
-        ('Primary 4', 'Primary 4'), ('Primary 5', 'Primary 5'), ('Primary 6', 'Primary 6'),
-        ('JHS 1', 'JHS 1'), ('JHS 2', 'JHS 2'), ('JHS 3', 'JHS 3'),
-        ('SHS 1', 'SHS 1'), ('SHS 2', 'SHS 2'), ('SHS 3', 'SHS 3')
-    ], validators=[DataRequired()])
-    course_id = HiddenField()
-    course_name = SelectField('Subject/Course', choices=[], validators=[DataRequired()])
-    title = StringField('Title', validators=[DataRequired()])
+    """Form for creating and editing quizzes - tertiary education (programme/level based)"""
+
+    # ✅ Programme and level selection
+    assigned_programme = SelectField(
+        'Programme',
+        choices=[('', '— Select Programme —')],
+        validators=[DataRequired(message="Programme is required")]
+    )
+
+    programme_level = SelectField(
+        'Level',
+        choices=[('', '— Select Level —')],
+        validators=[DataRequired(message="Level is required")]
+    )
+
+    # ✅ Course selection (populated dynamically)
+    course_id = HiddenField(validators=[Optional()])
+    
+    course_name = SelectField(
+        'Course Name',
+        choices=[('', '— Select Course (Optional) —')],
+        validators=[Optional()]  # Changed to Optional since course is optional
+    )
+
+    # ✅ Quiz details
+    title = StringField(
+        'Quiz Title',
+        validators=[DataRequired(message="Quiz title is required")],
+        render_kw={"placeholder": "Enter quiz title"}
+    )
+
     start_datetime = DateTimeLocalField(
-        'Start DateTime', format='%Y-%m-%dT%H:%M', validators=[DataRequired()]
+        'Start Date & Time',
+        format='%Y-%m-%dT%H:%M',
+        validators=[DataRequired(message="Start date/time is required")]
     )
+
     end_datetime = DateTimeLocalField(
-        'End DateTime', format='%Y-%m-%dT%H:%M', validators=[DataRequired()]
+        'End Date & Time',
+        format='%Y-%m-%dT%H:%M',
+        validators=[DataRequired(message="End date/time is required")]
     )
+
+    # ✅ Duration as a SelectField with string values
     duration = SelectField(
-        'Duration', 
-        choices=[('15','15'),('30','30'),('45','45'),('60','60'),('90','90'),('120','120')]
+        'Duration (minutes)',
+        choices=[
+            ('', '— Select Duration —'),
+            ('15', '15 minutes'),
+            ('30', '30 minutes'),
+            ('45', '45 minutes'),
+            ('60', '1 hour'),
+            ('90', '1.5 hours'),
+            ('120', '2 hours'),
+            ('180', '3 hours')
+        ],
+        validators=[DataRequired(message="Duration is required")]
     )
-    attempts_allowed = IntegerField('Attempts Allowed', validators=[DataRequired(), NumberRange(min=1)])
-    content_file = FileField('Upload File')
+
+    # ✅ Attempts allowed (single-shot quiz = 1 attempt)
+    attempts_allowed = IntegerField(
+        'Attempts Allowed',
+        validators=[
+            DataRequired(message="Attempts allowed is required"),
+            NumberRange(min=1, message="Must allow at least 1 attempt")
+        ],
+        default=1,
+        render_kw={"min": "1"}
+    )
+
     submit = SubmitField('Save Quiz')
-
-class ExamSetForm(FlaskForm):
-    name = StringField("Set Name", validators=[DataRequired(), Length(max=50)])
-    access_password = StringField('Set Password', validators=[DataRequired()])
-    submit = SubmitField("Save")
-
-class ExamForm(FlaskForm):
-    title = StringField('Title', validators=[DataRequired()])
-    assigned_class = SelectField('Assign to Class', validators=[DataRequired()])
-    course_id = SelectField('Course', coerce=int, choices=[], validators=[DataRequired()])
-    start_datetime = DateTimeLocalField('Start', format='%Y-%m-%dT%H:%M', validators=[DataRequired()])
-    end_datetime = DateTimeLocalField('End', format='%Y-%m-%dT%H:%M', validators=[DataRequired()])
-    duration_minutes = IntegerField('Duration (minutes)')
-    assignment_mode = SelectField('Assignment Mode', choices=[
-        ('random', 'Admin: Random set'),
-        ('hash', 'Deterministic: hash(student) → set'),
-        ('choice', 'Student chooses set'),
-    ], default='random')
-    assignment_seed = StringField('Assignment seed (optional)')
-    submit = SubmitField('Save')
-
+        
 class ExamOptionForm(FlaskForm):
     text = StringField("Option Text", validators=[DataRequired()])
     is_correct = BooleanField("Correct")
+
 
 class ExamQuestionForm(FlaskForm):
     question_text = TextAreaField("Question", validators=[DataRequired()])
     question_type = SelectField(
         "Type",
-        choices=[("mcq", "Multiple Choice"), ("true_false", "True/False"), ("subjective", "Subjective")],
+        choices=[
+            ("mcq", "Multiple Choice"),
+            ("true_false", "True/False"),
+            ("math", "Numeric/Math"),
+            ("subjective", "Subjective")
+        ],
         validators=[DataRequired()]
     )
-    marks = IntegerField("Marks", validators=[DataRequired()])
+    marks = IntegerField("Marks", validators=[DataRequired(), NumberRange(min=1)])
     options = FieldList(FormField(ExamOptionForm), min_entries=2, max_entries=6)
-    subjective_rubric = TextAreaField("Expected Answer / Rubric")  # <--- add this
+    subjective_rubric = TextAreaField("Expected Answer / Rubric")
     submit = SubmitField("Save")
 
+
+class ExamSetForm(FlaskForm):
+    name = StringField("Set Name", validators=[DataRequired(), Length(min=1, max=50)])
+    access_password = StringField('Set Password', validators=[DataRequired()])
+    submit = SubmitField("Save")
+
+
+class ExamForm(FlaskForm):
+    """Form for creating and editing exams."""
+    
+    title = StringField(
+        'Exam Title',
+        validators=[DataRequired(message="Title is required")],
+        render_kw={"placeholder": "Enter exam title"}
+    )
+    
+    programme_name = SelectField(
+        'Assign to Programme',
+        choices=[],
+        validators=[DataRequired(message="Programme is required")],
+        render_kw={"id": "programme_name"}
+    )
+    
+    programme_level = SelectField(
+        'Programme Level',
+        choices=[],
+        validators=[DataRequired(message="Level is required")],
+        render_kw={"id": "programme_level"}
+    )
+    
+    course_id = SelectField(
+        'Course',
+        coerce=int,
+        choices=[],
+        validators=[DataRequired(message="Course is required")],
+        render_kw={"id": "course_id"}
+    )
+    
+    start_datetime = DateTimeLocalField(
+        'Start Date & Time',
+        format='%Y-%m-%dT%H:%M',
+        validators=[DataRequired(message="Start date/time is required")]
+    )
+    
+    end_datetime = DateTimeLocalField(
+        'End Date & Time',
+        format='%Y-%m-%dT%H:%M',
+        validators=[DataRequired(message="End date/time is required")]
+    )
+    
+    duration_minutes = IntegerField(
+        'Duration (minutes)',
+        validators=[Optional(), NumberRange(min=1, message="Duration must be at least 1 minute")],
+        render_kw={"placeholder": "e.g., 90"}
+    )
+    
+    assignment_mode = SelectField(
+        'Assignment Mode',
+        choices=[
+            ('random', 'Admin: Random set'),
+            ('hash', 'Deterministic: hash(student) → set'),
+            ('choice', 'Student chooses set'),
+        ],
+        default='random',
+        validators=[DataRequired()]
+    )
+    
+    assignment_seed = StringField(
+        'Assignment seed (optional)',
+        validators=[Optional()],
+        render_kw={"placeholder": "Used only in Hash mode"}
+    )
+    
+    submit = SubmitField('Create Exam')
+    
 class AssignmentForm(FlaskForm):
-    assigned_class = SelectField('Assign to Class', choices=[
-        ('Primary 1', 'Primary 1'), ('Primary 2', 'Primary 2'), ('Primary 3', 'Primary 3'),
-        ('Primary 4', 'Primary 4'), ('Primary 5', 'Primary 5'), ('Primary 6', 'Primary 6'),
-        ('JHS 1', 'JHS 1'), ('JHS 2', 'JHS 2'), ('JHS 3', 'JHS 3'),
-        ('SHS 1', 'SHS 1'), ('SHS 2', 'SHS 2'), ('SHS 3', 'SHS 3')
-    ], validators=[DataRequired()])
+    """Form for creating and assigning coursework to programmes and courses"""
+    
+    programme = SelectField(
+        'Assign to Programme', 
+        choices=[], 
+        validators=[DataRequired(message="Please select a programme")],
+        description="Select the programme this assignment applies to"
+    )
 
-    course_id = HiddenField(validators=[DataRequired()])
-    course_name = SelectField('Course', choices=[], validators=[DataRequired()])
+    programme_level = SelectField(
+        'Programme Level',
+        choices=[
+            ('', '— Select Level —'),
+            ('100', 'Level 100'),
+            ('200', 'Level 200'),
+            ('300', 'Level 300'),
+            ('400', 'Level 400')
+        ],
+        validators=[DataRequired(message="Please select a level")],
+        description="Select the level of the programme"
+    )
 
-    title = StringField('Title', validators=[DataRequired()])
-    description = TextAreaField('Description')
-    instructions = TextAreaField('Instructions')
-    due_date = DateTimeField('Due Date & Time', format='%Y-%m-%dT%H:%M', validators=[DataRequired()])
-    max_score = FloatField('Max Score', validators=[DataRequired()])
-    file = FileField('Upload File', validators=[FileAllowed(['pdf','doc','docx','ppt','pptx','txt'])])
-    submit = SubmitField('Submit')
+    # ✅ Make course_id Optional - we'll validate it in the route
+    course_id = HiddenField(validators=[Optional()])
+    
+    course_name = SelectField(
+        'Course', 
+        choices=[('', '— Select Course —')], 
+        validators=[DataRequired(message="Please select a course")],
+        description="Select the specific course within the programme"
+    )
+
+    title = StringField(
+        'Assignment Title',
+        validators=[DataRequired(message="Assignment title is required")],
+        render_kw={"placeholder": "Enter assignment title"}
+    )
+    
+    description = TextAreaField(
+        'Description',
+        validators=[Optional()],
+        description="Brief overview of the assignment",
+        render_kw={"placeholder": "Brief overview of the assignment", "rows": 3}
+    )
+    
+    instructions = TextAreaField(
+        'Instructions',
+        validators=[Optional()],
+        description="Detailed instructions for completing the assignment",
+        render_kw={"placeholder": "Detailed instructions for students", "rows": 3}
+    )
+    
+    due_date = DateTimeField(
+        'Due Date & Time', 
+        format='%Y-%m-%dT%H:%M', 
+        validators=[DataRequired(message="Due date is required")],
+        description="When the assignment is due"
+    )
+    
+    max_score = FloatField(
+        'Max Score', 
+        validators=[DataRequired(message="Max score is required")],
+        description="Total points for this assignment",
+        render_kw={"type": "number", "step": "0.5", "min": "0"}
+    )
+    
+    file = FileField(
+        'Upload Assignment File (Optional)', 
+        validators=[
+            FileAllowed(
+                ['pdf','doc','docx','ppt','pptx','txt'],
+                'Only PDF, Word, PowerPoint, and text files are allowed'
+            ),
+            Optional()
+        ],
+        description="Attach a file for students to download"
+    )
+    
+    submit = SubmitField('Create Assignment')
 
 class MaterialForm(FlaskForm):
     title = StringField('Material Title', validators=[DataRequired()])
-    assigned_class = SelectField('Assigned Class', choices=[], validators=[DataRequired()])
-    course_name = SelectField('Course Name', choices=[], validators=[DataRequired()])
+    programme_name = SelectField('Programme', choices=[], validators=[DataRequired()])
+    programme_level = SelectField('Level', choices=[], validators=[DataRequired()])
+    course_name = SelectField('Course', choices=[], validators=[DataRequired()])
     files = MultipleFileField('Files', validators=[DataRequired()])
     submit = SubmitField('Upload')
 
-
 class CourseRegistrationForm(FlaskForm):
-    semester = SelectField('Semester',
-        choices=[('First','First'), ('Second','Second')],
-        validators=[DataRequired()])
-    
+    semester = SelectField('Semester', choices=[('First','First'), ('Second','Second')], validators=[DataRequired()])
     academic_year = SelectField('Academic Year', validators=[DataRequired()])
-    
-    courses = SelectMultipleField('Optional Courses',
-        coerce=int,
-        validators=[])
-    
+    courses = SelectMultipleField('Optional Courses', coerce=int)
     submit = SubmitField('Register Courses')
     
 class CourseForm(FlaskForm):
-    name           = StringField('Course Name', validators=[DataRequired()])
-    code           = StringField('Course Code', validators=[DataRequired(), Length(max=20)])
-    assigned_class = SelectField('Class', choices=get_class_choices(), validators=[DataRequired()])
-    semester       = SelectField('Semester', choices=[('First','First'),('Second','Second')], validators=[DataRequired()])
-    credit_hours = IntegerField('Credit Hours', validators=[DataRequired(), NumberRange(min=1, max=6)])
-    academic_year  = StringField('Academic Year', validators=[DataRequired()])
-    is_mandatory   = BooleanField('Mandatory?')
-    submit         = SubmitField('Save Course')
+    name = StringField('Course Name', validators=[DataRequired()])
+    code = StringField('Course Code', validators=[DataRequired(), Length(max=20)])
+    programme_name = SelectField('Programme', choices=get_programme_choices(), validators=[DataRequired()])
+    programme_level = SelectField('Level', choices=[('100','100'),('200','200'),('300','300'),('400','400')], validators=[DataRequired()])
+    semester = SelectField('Semester', choices=[('First','First'),('Second','Second')], validators=[DataRequired()])
+    credit_hours = IntegerField('Credit Hours', validators=[DataRequired()])
+    academic_year = StringField('Academic Year', validators=[DataRequired()])
+    is_mandatory = BooleanField('Mandatory?')
+    submit = SubmitField('Save Course')
 
 class CourseLimitForm(FlaskForm):
-    class_level     = SelectField('Class', choices=get_class_choices(), validators=[DataRequired()])
-    semester        = SelectField('Semester', choices=[('First','First'),('Second','Second')], validators=[DataRequired()])
+    programme_name  = SelectField('Programme', choices=get_programme_choices(), validators=[DataRequired()])
+    programme_level = SelectField('Level', choices=[('100','100'),('200','200'),('300','300'),('400','400')], validators=[DataRequired()])
+    semester        = SelectField('Semester', choices=[('First','First'), ('Second','Second')], validators=[DataRequired()])
     academic_year   = StringField('Academic Year', validators=[DataRequired()])
     mandatory_limit = IntegerField('Mandatory Course Limit', validators=[DataRequired(), NumberRange(min=0)])
     optional_limit  = IntegerField('Optional Course Limit', validators=[DataRequired(), NumberRange(min=0)])

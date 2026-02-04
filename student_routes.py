@@ -1,10 +1,11 @@
+import re
 from flask import Blueprint, current_app, render_template, abort, redirect, url_for, flash, jsonify, session, send_from_directory, send_file, make_response
 import json, os
 from flask import request
 from flask_login import login_required, current_user, login_user
 from sqlalchemy import func
 from werkzeug.utils import safe_join, secure_filename
-from models import ExamTimetableEntry, TeacherAssessment, TeacherAssessmentAnswer, TeacherAssessmentPeriod, TeacherAssessmentQuestion, TeacherCourseAssignment, TeacherProfile, db, User, Quiz, StudentQuizSubmission, Question, StudentProfile, QuizAttempt, Assignment, CourseMaterial, StudentCourseRegistration, Course,  TimetableEntry, AcademicCalendar, AcademicYear, AppointmentSlot, AppointmentBooking, StudentFeeBalance, ClassFeeStructure, StudentFeeTransaction, Exam, ExamSubmission, ExamQuestion, ExamAttempt, ExamSet, ExamSetQuestion, Notification, NotificationRecipient, Meeting, StudentAnswer
+from models import ExamTimetableEntry, TeacherAssessment, TeacherAssessmentAnswer, TeacherAssessmentPeriod, TeacherAssessmentQuestion, TeacherCourseAssignment, TeacherProfile, db, User, Quiz, StudentQuizSubmission, Question, StudentProfile, Assignment, AssignmentSubmission, CourseMaterial, StudentCourseRegistration, Course,  TimetableEntry, AcademicCalendar, AcademicYear, AppointmentSlot, AppointmentBooking, StudentFeeBalance, ProgrammeFeeStructure, StudentFeeTransaction, Exam, ExamSubmission, ExamQuestion, ExamAttempt, ExamSet, ExamSetQuestion, Notification, NotificationRecipient, Meeting, StudentAnswer
 from datetime import datetime
 from forms import CourseRegistrationForm, ChangePasswordForm, StudentLoginForm
 from io import BytesIO
@@ -20,6 +21,7 @@ from reportlab.lib.utils import ImageReader
 import qrcode
 from PIL import Image, ImageDraw
 import textwrap
+from utils.id_card import generate_student_id_card_pdf
 from utils.result_builder import ResultBuilder
 from utils.results_manager import ResultManager
 from utils.result_templates import get_template_path
@@ -29,16 +31,25 @@ student_bp = Blueprint('student', __name__, url_prefix='/student')
 @student_bp.route('/login', methods=['GET', 'POST'])
 def student_login():
     form = StudentLoginForm()
+
     if form.validate_on_submit():
         username = form.username.data.strip()
         user_id = form.user_id.data.strip()
         password = form.password.data.strip()
 
         user = User.query.filter_by(user_id=user_id, role='student').first()
+
         if user and user.username.lower() == username.lower() and user.check_password(password):
             login_user(user)
             flash(f"Welcome back, {user.first_name}!", "success")
+
+            # 🔥 THIS IS THE MAGIC LINE
+            next_page = request.args.get('next')
+            if next_page and next_page.startswith('/'):
+                return redirect(next_page)
+
             return redirect(url_for('student.dashboard'))
+
         flash("Invalid student credentials.", "danger")
 
     return render_template('student/login.html', form=form)
@@ -58,7 +69,7 @@ def inject_notification_count():
         from models import NotificationRecipient
 
         if hasattr(current_user, "user_id"):  
-            # Regular User (student, teacher, parent)
+            # Regular User (student, teacher)
             unread_count = NotificationRecipient.query.filter_by(
                 user_id=current_user.user_id,
                 is_read=False
@@ -81,14 +92,20 @@ def register_courses():
     now = datetime.utcnow()
     start, registration_deadline = Course.get_registration_window()
 
+    # 1️⃣ FETCH STUDENT PROFILE
     profile = StudentProfile.query.filter_by(user_id=student.user_id).first()
     if not profile:
         flash("Student profile not found.", "danger")
         return redirect(url_for("student.dashboard"))
 
-    class_name = profile.current_class
+    programme_name = profile.current_programme
+    programme_level = profile.programme_level
 
-    # Get all distinct academic years
+    if not programme_name or not programme_level:
+        flash("Programme information is incomplete. Contact admin.", "danger")
+        return redirect(url_for("student.dashboard"))
+
+    # 2️⃣ LOAD ACADEMIC YEARS
     years = db.session.query(Course.academic_year).distinct().order_by(Course.academic_year).all()
     if not years:
         flash("No academic years available yet. Contact admin.", "warning")
@@ -96,7 +113,7 @@ def register_courses():
 
     form.academic_year.choices = [(y[0], y[0]) for y in years]
 
-    # Determine current step
+    # 3️⃣ STEP & SELECTIONS
     step = request.form.get("step")
     selected_sem = request.form.get("semester") or form.semester.data or 'First'
     selected_year = request.form.get("academic_year") or form.academic_year.data or years[-1][0]
@@ -104,17 +121,20 @@ def register_courses():
     form.semester.data = selected_sem
     form.academic_year.data = selected_year
 
-    # Fetch relevant courses
+    # 4️⃣ FETCH COURSES
     courses = Course.query.filter_by(
-        assigned_class=class_name,
+        programme_name=programme_name,
+        programme_level=programme_level,
         semester=selected_sem,
         academic_year=selected_year
     ).all()
 
     mandatory_courses = [c for c in courses if c.is_mandatory]
     optional_courses = [c for c in courses if not c.is_mandatory]
+
     form.courses.choices = [(c.id, f"{c.code} - {c.name}") for c in optional_courses]
 
+    # 5️⃣ LOAD EXISTING REGISTRATIONS
     registered = StudentCourseRegistration.query.filter_by(
         student_id=student.id,
         semester=selected_sem,
@@ -122,19 +142,20 @@ def register_courses():
     ).all()
     form.courses.data = [r.course_id for r in registered if not r.course.is_mandatory]
 
-    # === Block registration if deadline passed ===
+    # 6️⃣ DEADLINE CHECK
     deadline_passed = registration_deadline and now > registration_deadline
 
-    # Handle final registration submission
+    # 7️⃣ HANDLE SUBMISSION
     if request.method == "POST" and step == "register_courses" and form.validate_on_submit():
         if deadline_passed:
-            flash("Registration deadline has passed. You cannot register or update courses.", "danger")
+            flash("Registration deadline has passed.", "danger")
             return redirect(url_for("student.register_courses"))
 
         selected_ids = set(map(int, request.form.getlist('courses[]')))
         mandatory_ids = {c.id for c in mandatory_courses}
         final_course_ids = selected_ids | mandatory_ids
 
+        # DELETE OLD RECORDS
         StudentCourseRegistration.query.filter_by(
             student_id=student.id,
             semester=selected_sem,
@@ -142,6 +163,7 @@ def register_courses():
         ).delete()
         db.session.commit()
 
+        # SAVE NEW RECORDS
         for cid in final_course_ids:
             db.session.add(StudentCourseRegistration(
                 student_id=student.id,
@@ -154,6 +176,7 @@ def register_courses():
         flash("Courses registered successfully!", "success")
         return redirect(url_for("student.register_courses"))
 
+    # 8️⃣ RENDER PAGE
     show_courses = (step == "select_semester") or len(registered) > 0
 
     return render_template(
@@ -166,6 +189,7 @@ def register_courses():
         registration_deadline=registration_deadline,
         deadline_passed=deadline_passed
     )
+
 
 @student_bp.route('/courses/reset', methods=['POST'])
 @login_required
@@ -189,6 +213,114 @@ def reset_registration():
 
     flash("Course registration has been reset. You may register again.", "info")
     return redirect(url_for("student.register_courses"))
+
+@student_bp.route('/assessments')
+@login_required
+def view_assessments():
+    """Show student's quiz, assignment, and exam results with raw scores and feedback"""
+    student_user = current_user
+    student_profile = StudentProfile.query.filter_by(user_id=student_user.user_id).first()
+    
+    if not student_profile:
+        flash("Student profile not found", "danger")
+        return redirect(url_for("student.dashboard"))
+
+    # Get all courses student is registered for
+    registrations = StudentCourseRegistration.query.filter_by(student_id=student_user.id).all()
+    course_ids = [reg.course_id for reg in registrations]
+    
+    if not course_ids:
+        return render_template("student/assessments.html", assessments=[], courses=[], message="No courses registered.")
+
+    courses = Course.query.filter(Course.id.in_(course_ids)).all()
+    course_dict = {c.id: c for c in courses}
+
+    assessments = []
+
+    # Quizzes
+    quiz_subs = (
+        db.session.query(StudentQuizSubmission, Quiz)
+        .join(Quiz, Quiz.id == StudentQuizSubmission.quiz_id)
+        .filter(StudentQuizSubmission.student_id == student_user.id)
+        .filter(Quiz.course_id.in_(course_ids))
+        .all()
+    )
+    
+    for sub, quiz in quiz_subs:
+        course = course_dict.get(quiz.course_id)
+        assessments.append({
+            "type": "Quiz",
+            "course": course.name if course else "Unknown",
+            "title": quiz.title,
+            "raw_score": float(getattr(sub, "score", 0) or 0),
+            "max_score": float(getattr(quiz, 'max_score', 0) or 0),
+            "date": getattr(sub, "submitted_at", None),
+            "feedback": None  # Can add feedback field to StudentQuizSubmission if needed
+        })
+
+    # Assignments
+    assignment_subs = (
+        db.session.query(AssignmentSubmission, Assignment)
+        .join(Assignment, Assignment.id == AssignmentSubmission.assignment_id)
+        .filter(AssignmentSubmission.student_id == student_user.id)
+        .filter(Assignment.course_id.in_(course_ids))
+        .filter(AssignmentSubmission.score != None)
+        .all()
+    )
+    
+    for sub, assignment in assignment_subs:
+        course = course_dict.get(assignment.course_id)
+        assessments.append({
+            "type": "Assignment",
+            "course": course.name if course else "Unknown",
+            "title": assignment.title,
+            "raw_score": float(getattr(sub, "score", 0) or 0),
+            "max_score": float(getattr(assignment, 'max_score', 0) or 0),
+            "date": getattr(sub, "submitted_at", None),
+            "feedback": getattr(sub, "feedback", None)
+        })
+
+    # Exams
+    exam_subs = (
+        db.session.query(ExamSubmission, Exam)
+        .join(Exam, Exam.id == ExamSubmission.exam_id)
+        .filter(ExamSubmission.student_id == student_user.id)
+        .filter(Exam.course_id.in_(course_ids))
+        .filter(ExamSubmission.score != None)
+        .all()
+    )
+    
+    for sub, exam in exam_subs:
+        course = course_dict.get(exam.course_id)
+        assessments.append({
+            "type": "Exam",
+            "course": course.name if course else "Unknown",
+            "title": exam.title,
+            "raw_score": float(getattr(sub, "score", 0) or 0),
+            "max_score": float(getattr(sub, 'max_score', 0) or 0),
+            "date": getattr(sub, "submitted_at", None),
+            "feedback": None
+        })
+
+    # Format dates
+    for a in assessments:
+        if a["date"]:
+            try:
+                a["date"] = a["date"].strftime("%Y-%m-%d %H:%M")
+            except Exception:
+                a["date"] = str(a["date"])
+        else:
+            a["date"] = ""
+
+    # Sort by date (newest first)
+    assessments.sort(key=lambda a: a.get("date") or "", reverse=True)
+
+    return render_template(
+        'student/assessments.html',
+        assessments=assessments,
+        courses=[c.name for c in courses],
+        message=None
+    )
 
 @student_bp.route('/my_results')
 @login_required
@@ -261,95 +393,90 @@ def transcript():
         overall_gpa=data["overall_gpa"]
     )
 
-@student_bp.route('/download_registered_courses_pdf')
+@student_bp.route('/courses/download-pdf', methods=['GET'])
 @login_required
 def download_registered_courses_pdf():
-    student = current_user
-    semester = request.args.get('semester')
-    academic_year = request.args.get('academic_year')
-
-    if not semester or not academic_year:
-        abort(400, "Missing semester or academic year")
-
-    # Fetch all registrations for student for that semester and year
-    registrations = StudentCourseRegistration.query \
-        .filter_by(
+    """Download registered courses as PDF"""
+    from flask import send_file
+    from utils.course_registration_pdf import generate_course_registration_pdf
+    
+    try:
+        # Get parameters from URL
+        semester = request.args.get('semester')
+        academic_year = request.args.get('academic_year')
+        
+        # Validate inputs
+        if not semester or not academic_year:
+            flash("Missing semester or academic year.", "danger")
+            return redirect(url_for('student.register_courses'))
+        
+        student = current_user
+        
+        # Get registered courses from database
+        registered = StudentCourseRegistration.query.filter_by(
             student_id=student.id,
             semester=semester,
             academic_year=academic_year
-        ) \
-        .options(joinedload(StudentCourseRegistration.course)) \
-        .all()
-
-    if not registrations:
-        abort(404, description="No registered courses found.")
-
-    buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=40, leftMargin=40, topMargin=60, bottomMargin=40)
-    elements = []
-
-    styles = getSampleStyleSheet()
-    styleH = styles['Heading1']
-    styleN = styles['Normal']
-
-    # Title
-    elements.append(Paragraph("Course Registration Summary", styleH))
-    elements.append(Spacer(1, 12))
-    elements.append(Paragraph(f"Student Name: {student.full_name}", styleN))
-    elements.append(Paragraph(f"Academic Year: {academic_year}", styleN))
-    elements.append(Paragraph(f"Semester: {semester}", styleN))
-    elements.append(Paragraph(f"Date: {datetime.now().strftime('%B %d, %Y')}", styleN))
-    elements.append(Spacer(1, 24))
-
-    # Table content
-    data = [["Course Code", "Course Name", "Type"]]
-
-    for reg in registrations:
-        course = reg.course
-        course_type = "Mandatory" if course.is_mandatory else "Optional"
-        data.append([course.code, course.name, course_type])
-
-    table = Table(data, colWidths=[100, 300, 100])
-    table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#004085")),
-        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-        ('FONTSIZE', (0, 0), (-1, 0), 12),
-        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.whitesmoke, colors.lightgrey]),
-        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-    ]))
-
-    elements.append(table)
-    doc.build(elements)
-
-    buffer.seek(0)
-    response = make_response(buffer.read())
-    response.headers['Content-Type'] = 'application/pdf'
-    response.headers['Content-Disposition'] = f'attachment; filename=Course_Registration_{academic_year}_{semester}.pdf'
-    return response
-
+        ).all()
+        
+        # Check if there are any courses
+        if not registered:
+            flash("No courses registered for this semester.", "warning")
+            return redirect(url_for('student.register_courses'))
+        
+        # Generate PDF with logo
+        import os
+        logo_path = os.path.join(os.path.dirname(__file__), 'static', 'NEW-DHI-LOGO.jpeg')
+        
+        pdf = generate_course_registration_pdf(
+            student=student,
+            registered_courses=registered,
+            semester=semester,
+            academic_year=academic_year,
+            logo_path=logo_path
+        )
+        
+        # Create filename
+        filename = f"Registration_{student.user_id}_{semester}_{academic_year}.pdf"
+        
+        # Send file to user
+        return send_file(
+            pdf,
+            mimetype='application/pdf',
+            as_attachment=True,
+            download_name=filename,
+            conditional=False
+        )
+    
+    except Exception as e:
+        flash(f"Error: {str(e)}", "danger")
+        return redirect(url_for('student.register_courses'))
+        
 from datetime import datetime
 from flask import render_template, abort
 from flask_login import login_required, current_user
 from math import ceil
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 
 @student_bp.route('/timetable')
 @login_required
 def view_timetable():
+    """View class timetable (tertiary version with programme/level)"""
     if current_user.role != 'student':
         abort(403)
 
     profile = StudentProfile.query.filter_by(user_id=current_user.user_id).first_or_404()
+    
+    # For tertiary, filter by programme level instead of class
+    # TimetableEntry.assigned_class now contains level like "100", "200", etc.
     entries = (
         TimetableEntry.query
-        .filter_by(assigned_class=profile.current_class)
+        .filter_by(programme_level=str(profile.programme_level))
         .order_by(TimetableEntry.day_of_week, TimetableEntry.start_time)
         .all()
     )
 
-    # === CUSTOM TIME SLOTS (mix of hours and partials) ===
+    # === CUSTOM TIME SLOTS ===
     TIME_SLOTS = [
         (8*60, 9*60),
         (9*60, 10*60),
@@ -365,7 +492,7 @@ def view_timetable():
 
     # Build header ticks with widths (percent)
     MIN_START = TIME_SLOTS[0][0]
-    MAX_END   = TIME_SLOTS[-1][1]
+    MAX_END = TIME_SLOTS[-1][1]
     total_minutes = MAX_END - MIN_START
 
     time_ticks = []
@@ -379,21 +506,20 @@ def view_timetable():
             'width_pct': round(width_pct, 4)
         })
 
-    # Build a list of vertical line positions (cumulative)
+    # Build vertical line positions
     cum = MIN_START
     vlines = []
     for start, end in TIME_SLOTS:
         cum += (end - start)
         cum_pct = ((cum - MIN_START) / total_minutes) * 100.0
-        # determine whether this is a full-hour boundary (end minute = 0)
         is_thick = ((end % 60) == 0)
         vlines.append({'left_pct': round(cum_pct, 3), 'is_thick': is_thick})
 
-    # day blocks
+    # Day blocks
     day_order = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday']
     day_blocks = {d: [] for d in day_order}
 
-    # helper to compute left/width pct from minutes
+    # Helper to compute left/width pct
     def pct_from_minutes(start_min, end_min):
         s = max(start_min, MIN_START)
         e = min(end_min, MAX_END)
@@ -403,7 +529,7 @@ def view_timetable():
         width_pct = ((e - s) / total_minutes) * 100.0
         return round(left_pct, 3), round(width_pct, 3)
 
-    # add classes (use real start/end minutes; breaks will be added below)
+    # Add classes
     for e in entries:
         s_min = e.start_time.hour*60 + e.start_time.minute
         e_min = e.end_time.hour*60 + e.end_time.minute
@@ -420,13 +546,13 @@ def view_timetable():
             'is_break': False
         })
 
-    # ========= BREAKS (exact minutes, with letters per day) =========
-    MORNING_BREAK_LETTERS = ['B', 'R', 'E', 'A', 'K']  # Monday → Friday
+    # ========= BREAKS =========
+    MORNING_BREAK_LETTERS = ['B', 'R', 'E', 'A', 'K']
     AFTERNOON_BREAK_LETTERS = ['L', 'U', 'N', 'C', 'H']
 
     BREAKS = [
         {'title': 'Morning Break', 'start_min': 10*60, 'end_min': 10*60+25, 'letters': MORNING_BREAK_LETTERS},
-        {'title': 'Lunch Break',   'start_min': 12*60+30, 'end_min': 12*60+55, 'letters': AFTERNOON_BREAK_LETTERS},
+        {'title': 'Lunch Break', 'start_min': 12*60+30, 'end_min': 12*60+55, 'letters': AFTERNOON_BREAK_LETTERS},
     ]
 
     for i, day in enumerate(day_order):
@@ -436,7 +562,7 @@ def view_timetable():
                 continue
             day_blocks[day].append({
                 'id': None,
-                'title': br['letters'][i],  # Use letter instead of full name
+                'title': br['letters'][i],
                 'start_str': f"{br['start_min']//60:02d}:{br['start_min']%60:02d}",
                 'end_str': f"{br['end_min']//60:02d}:{br['end_min']%60:02d}",
                 'left_pct': left_pct,
@@ -444,16 +570,17 @@ def view_timetable():
                 'is_break': True
             })
 
-    # sort blocks per day
+    # Sort blocks per day
     for d in day_order:
         day_blocks[d].sort(key=lambda x: x['left_pct'])
 
-    # also build CSS grid-template-columns value (percent list)
+    # CSS grid-template-columns value
     col_template = ' '.join(f'{slot["width_pct"]}%' for slot in time_ticks)
 
     return render_template(
         'student/timetable.html',
-        student_class=profile.current_class,
+        programme=profile.current_programme,
+        level=profile.programme_level,
         time_ticks=time_ticks,
         day_blocks=day_blocks,
         vlines=vlines,
@@ -465,24 +592,18 @@ def view_timetable():
 @student_bp.route('/download_timetable')
 @login_required
 def download_timetable():
-    from io import BytesIO
-    from reportlab.lib.pagesizes import A4, landscape
-    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
-    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-    from reportlab.lib import colors
-    from reportlab.lib.units import inch
-    from datetime import datetime
-    from flask import send_file, flash, redirect, url_for
-
+    """Download timetable as PDF (tertiary version)"""
     student_profile = StudentProfile.query.filter_by(user_id=current_user.user_id).first()
     if not student_profile:
         flash('Student profile not found.', 'danger')
         return redirect(url_for('student.view_timetable'))
 
-    student_class = student_profile.current_class
+    # Use programme level for filtering
+    programme_level = str(student_profile.programme_level)
+    programme_name = student_profile.current_programme
 
     timetable_entries = TimetableEntry.query \
-        .filter_by(assigned_class=student_class) \
+        .filter_by(assigned_class=programme_level) \
         .join(Course, TimetableEntry.course_id == Course.id) \
         .order_by(TimetableEntry.day_of_week, TimetableEntry.start_time) \
         .all()
@@ -528,10 +649,9 @@ def download_timetable():
         mins = end - start
         width = remaining_width * (mins / total_minutes)
         col_widths.append(width)
-        label = f"{start//60:02d}:{start%60:02d} - {end//60:02d}:{end%60:02d}"
-        header.append(label)
+        header.append(f"{start//60:02d}:{start%60:02d} - {end//60:02d}:{end%60:02d}")
 
-    # PDF Paragraph style for courses / breaks
+    # PDF Paragraph style
     styles = getSampleStyleSheet()
     cell_style = ParagraphStyle(
         'cell_style',
@@ -539,26 +659,25 @@ def download_timetable():
         alignment=1,  # center
         fontSize=9,
         leading=10,
-        wordWrap='CJK',  # wrap long names
+        wordWrap='CJK'
     )
 
     # Build timetable matrix
     timetable_matrix = []
-    now = datetime.now()
-    today_name = now.strftime('%A')
+    today_name = datetime.now().strftime('%A')
 
     for i, day in enumerate(days):
-        row = [day]  # first column is plain string (day)
+        row = [day]  # first column is day
         for start, end in TIME_SLOTS:
             match = next(
-                (e for e in timetable_entries 
-                 if e.day_of_week == day and 
-                    (e.start_time.hour*60 + e.start_time.minute) == start),
+                (e for e in timetable_entries
+                 if e.day_of_week == day and (e.start_time.hour*60 + e.start_time.minute) == start),
                 None
             )
             if match:
                 row.append(Paragraph(match.course.name, cell_style))
             else:
+                # Check breaks
                 letter = None
                 for br in BREAKS:
                     if start >= br['start_min'] and start < br['end_min']:
@@ -571,17 +690,22 @@ def download_timetable():
 
     # PDF Generation
     buffer = BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=landscape(A4),
-                            leftMargin=inch/2, rightMargin=inch/2,
-                            topMargin=inch/2, bottomMargin=inch/2)
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=landscape(A4),
+        leftMargin=inch/2, rightMargin=inch/2,
+        topMargin=inch/2, bottomMargin=inch/2
+    )
     elements = []
 
-    elements.append(Paragraph(f"<b>Class Timetable: {student_class}</b>", styles['Title']))
+    # TERTIARY TITLE FORMAT
+    title_text = f"<b>{programme_name} - Level {programme_level} Timetable</b>"
+    elements.append(Paragraph(title_text, styles['Title']))
     elements.append(Spacer(1, 12))
 
     table = Table(data, colWidths=col_widths, repeatRows=1)
 
-    # Modern colorful table style
+    # Table style
     table_style = TableStyle([
         ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#4A90E2")),
         ('TEXTCOLOR', (0,0), (-1,0), colors.white),
@@ -608,15 +732,20 @@ def download_timetable():
     table.setStyle(table_style)
     elements.append(table)
 
-    elements.append(Spacer(1,12))
+    elements.append(Spacer(1, 12))
     elements.append(Paragraph(f"Generated on: {datetime.now().strftime('%d %b %Y %I:%M %p')}", styles['Normal']))
 
     doc.build(elements)
     buffer.seek(0)
 
-    return send_file(buffer, as_attachment=True,
-                     download_name=f"{student_class}_timetable.pdf",
-                     mimetype='application/pdf')
+    # TERTIARY FILENAME FORMAT
+    filename = f"{programme_name}_Level{programme_level}_timetable.pdf"
+    return send_file(
+        buffer,
+        as_attachment=True,
+        download_name=filename,
+        mimetype='application/pdf'
+    )
 
 # Appointment Booking System
 from collections import defaultdict
@@ -707,82 +836,118 @@ def student_fees():
         transactions=transactions
     )
 
-@student_bp.route('/pay-fees')
+
+@student_bp.route('/pay-fees', methods=['GET', 'POST'])
 @login_required
 def pay_fees():
     if current_user.role != 'student':
-        flash("Unauthorized access", "danger")
+        abort(403)
+
+    student = current_user
+    profile = StudentProfile.query.filter_by(user_id=student.user_id).first()
+    if not profile:
+        flash("Student profile not found.", "danger")
         return redirect(url_for('main.index'))
 
-    # Get selected year and semester from query parameters
-    year = request.args.get('year')
-    semester = request.args.get('semester')
+    programme = profile.current_programme
+    level = str(int(profile.programme_level)) if profile.programme_level else '100'
+    study_format = profile.study_format or 'Regular'
 
-    # Render empty view if filters are missing
-    if not year or not semester:
-        flash("Please select an academic year and semester.", "warning")
-        return render_template(
-            'student/pay_fees.html',
-            assigned_fees=[],
-            total_fee=0,
-            current_balance=0,
-            pending_balance=0,
-            transactions=[],
-            year=year,
-            semester=semester
-        )
+    year = request.args.get('year') or str(datetime.now().year)
+    semester = request.args.get('semester') or 'First'
 
-    student_class = current_user.student_profile.current_class
-
-    # Fetch assigned fees for class/year/semester
-    assigned_fees = ClassFeeStructure.query.filter_by(
-        class_level=student_class,
+    # Get fees
+    fee_structures = ProgrammeFeeStructure.query.filter_by(
+        programme_name=programme,
+        programme_level=level,
+        study_format=study_format,
         academic_year=year,
         semester=semester
     ).all()
-    total_fee = sum(fee.amount for fee in assigned_fees)
 
-    # Approved payments
+    total_fee = sum(f.amount for f in fee_structures) if fee_structures else 0.0
+
+    # Get approved payments
     approved_txns = StudentFeeTransaction.query.filter_by(
-        student_id=current_user.id,
+        student_id=student.id,
         academic_year=year,
         semester=semester,
         is_approved=True
     ).all()
+
     current_balance = sum(txn.amount for txn in approved_txns)
+    remaining = max(0, total_fee - current_balance)
 
-    # Pending payments
-    pending_txns = StudentFeeTransaction.query.filter_by(
-        student_id=current_user.id,
-        academic_year=year,
-        semester=semester,
-        is_approved=False
-    ).all()
-    pending_balance = sum(txn.amount for txn in pending_txns)
+    # POST: Submit payment
+    if request.method == 'POST':
+        amount = float(request.form.get('amount', 0))
+        
+        # VALIDATION: Cannot pay more than remaining
+        if amount > remaining:
+            flash(f"Cannot pay more than GHS {remaining:.2f}", "danger")
+            return redirect(url_for('student.pay_fees', year=year, semester=semester))
+        
+        if amount <= 0:
+            flash("Amount must be greater than 0", "danger")
+            return redirect(url_for('student.pay_fees', year=year, semester=semester))
 
-    # All transactions
-    transactions = StudentFeeTransaction.query.filter_by(
-        student_id=current_user.id,
-        academic_year=year,
-        semester=semester
-    ).order_by(StudentFeeTransaction.timestamp.desc()).all()
+        description = request.form.get('description') or "School Fees"
+
+        txn = StudentFeeTransaction(
+            student_id=student.id,
+            academic_year=year,
+            semester=semester,
+            amount=amount,
+            description=description,
+            is_approved=False,
+            timestamp=datetime.utcnow()
+        )
+        db.session.add(txn)
+        db.session.commit()
+
+        flash(f"✓ Payment of GHS {amount:.2f} submitted", "success")
+        return redirect(url_for('student.pay_fees', year=year, semester=semester))
+
+    # Available years
+    years = db.session.query(ProgrammeFeeStructure.academic_year).filter_by(
+        programme_name=programme,
+        programme_level=level,
+        study_format=study_format
+    ).distinct().order_by(ProgrammeFeeStructure.academic_year.desc()).all()
+    available_years = [y[0] for y in years]
+
+    # Determine if installments are allowed based on level
+    # Level 100 (freshers): Full payment only
+    # Level 200+: Installments allowed
+    allow_installments = int(level) >= 200
 
     return render_template(
         'student/pay_fees.html',
-        assigned_fees=assigned_fees,
+        assigned_fees=fee_structures,
         total_fee=total_fee,
         current_balance=current_balance,
-        pending_balance=pending_balance,
-        transactions=transactions,
+        remaining=remaining,
+        max_allowed_amount=remaining,
         year=year,
-        semester=semester
+        semester=semester,
+        available_years=available_years,
+        transactions=approved_txns,
+        programme=programme,
+        level=level,
+        allow_installments=allow_installments,
+        student_level=int(level)
     )
 
 @student_bp.route('/download-receipt/<int:txn_id>')
 @login_required
 def download_receipt(txn_id):
     txn = StudentFeeTransaction.query.get_or_404(txn_id)
-    if txn.student_id != current_user.id or not txn.is_approved:
+
+    # Allow only the student
+    if current_user.id != txn.student_id:
+        abort(403)
+
+    if not txn.is_approved:
         abort(403)
 
     filename = f"receipt_{txn.id}.pdf"
@@ -790,7 +955,7 @@ def download_receipt(txn_id):
 
     if not os.path.exists(filepath):
         flash("Receipt not found. Please contact admin.", "danger")
-        return redirect(url_for('student.pay_fees', year=txn.academic_year, semester=txn.semester))
+        return redirect(url_for('student.student_fees'))
 
     return send_file(filepath, as_attachment=True)
 
@@ -803,6 +968,19 @@ def profile():
 
     profile = StudentProfile.query.filter_by(user_id=current_user.user_id).first()
     return render_template('student/profile.html', profile=profile, user=current_user)
+
+@student_bp.route('/id-card')
+@login_required
+def view_id_card():
+    if not current_user.is_student:
+        abort(403)
+    
+    id_card_url = generate_student_id_card_pdf(current_user)
+    return render_template(
+        'student/view_id_card.html',
+        id_card_url=id_card_url,
+        student=current_user  # <-- pass the student here
+    )
 
 @student_bp.route('/profile/edit', methods=['GET', 'POST'])
 @login_required
@@ -968,11 +1146,12 @@ def exam_timetable_page():
     return render_template('student/exam_timetable_input.html')
 
 def generate_logo_qr(data: str,
-                     logo_path: str,
+                     logo_path: str = None,
                      final_size: int = 300,
                      logo_fraction: float = 0.45,
-                     box_size: int = 24,
-                     border: int = 10) -> Image.Image:
+                     box_size: int = 10,
+                     border: int = 2) -> Image.Image:
+    """Generate QR code with optional logo overlay."""
     qr = qrcode.QRCode(
         version=None,
         error_correction=qrcode.constants.ERROR_CORRECT_H,
@@ -981,47 +1160,60 @@ def generate_logo_qr(data: str,
     )
     qr.add_data(data)
     qr.make(fit=True)
-    qr_img = qr.make_image(fill_color="black", back_color="white").convert("RGBA")
-    qr_px = qr_img.size[0]
-    logo_px = int(qr_px * logo_fraction)
-    if logo_px <= 0:
-        raise ValueError("logo_fraction too small or qr image size wrong")
-    logo = Image.open(logo_path).convert("RGBA")
-    logo.thumbnail((logo_px, logo_px), Image.Resampling.LANCZOS)
-    lw, lh = logo.size
-    pad = max(6, int(logo_px * 0.06))
-    bg_size = (lw + pad*2, lh + pad*2)
-    circle_bg = Image.new("RGBA", bg_size, (255,255,255,0))
-    mask = Image.new("L", bg_size, 0)
-    draw = ImageDraw.Draw(mask)
-    draw.ellipse((0,0,bg_size[0]-1,bg_size[1]-1), fill=255)
-    white_bg = Image.new("RGBA", bg_size, (255,255,255,255))
-    circle_bg.paste(white_bg, (0,0), mask)
-    pos = ((qr_px - bg_size[0]) // 2, (qr_px - bg_size[1]) // 2)
-    qr_img.paste(circle_bg, pos, circle_bg)
-    logo_pos = (pos[0] + pad, pos[1] + pad)
-    qr_img.paste(logo, logo_pos, logo)
-    if final_size != qr_px:
+    qr_img = qr.make_image(fill_color="black", back_color="white").convert("RGB")
+    
+    # Resize to final size if needed
+    if final_size and qr_img.size[0] != final_size:
         qr_img = qr_img.resize((final_size, final_size), Image.Resampling.LANCZOS)
+    
+    # Add logo if provided
+    if logo_path:
+        try:
+            logo = Image.open(logo_path).convert("RGBA")
+            
+            # Calculate logo size based on fraction
+            logo_size = int(qr_img.size[0] * logo_fraction)
+            logo = logo.resize((logo_size, logo_size), Image.Resampling.LANCZOS)
+            
+            # Create white background for logo
+            logo_bg = Image.new("RGB", (logo_size + 10, logo_size + 10), "white")
+            logo_bg.paste(logo, (5, 5), logo if logo.mode == "RGBA" else None)
+            
+            # Paste logo in center
+            logo_pos = (qr_img.size[0] // 2 - logo_bg.size[0] // 2,
+                       qr_img.size[1] // 2 - logo_bg.size[1] // 2)
+            qr_img.paste(logo_bg, logo_pos)
+        except Exception as e:
+            # If logo loading fails, just return QR code without logo
+            pass
+    
     return qr_img
 
 
 @student_bp.route('/exam-timetable/download', methods=['POST'])
 @login_required
 def download_student_exam_timetable():
+    """Download exam timetable for tertiary student (by index number)"""
     index_number = request.form.get("index_number")
     if not index_number:
         flash("Please enter a valid index number.", "danger")
         return redirect(url_for('student.exam_timetable_page'))
 
-    profile = StudentProfile.query.join(User).filter(User.user_id == index_number).first()
+    # Find student by index number (tertiary identifier)
+    profile = StudentProfile.query.filter_by(index_number=index_number).first()
     if not profile:
         flash("Index number not found.", "danger")
         return redirect(url_for('student.exam_timetable_page'))
 
+    user = profile.user
+    if not user:
+        flash("Student profile incomplete.", "danger")
+        return redirect(url_for('student.exam_timetable_page'))
+
+    # Get exam timetable entries for this programme level
     entries = ExamTimetableEntry.query.filter(
         ((ExamTimetableEntry.student_index == index_number) |
-         (ExamTimetableEntry.assigned_class == profile.current_class))
+         (ExamTimetableEntry.programme_level == str(profile.programme_level)))
     ).order_by(
         ExamTimetableEntry.date,
         ExamTimetableEntry.start_time
@@ -1031,24 +1223,16 @@ def download_student_exam_timetable():
         flash("No exam timetable found for this index number.", "warning")
         return redirect(url_for('student.exam_timetable_page'))
 
-    # Layout constants (tweak these for different looks)
+    # Layout constants
     margin = 40
-    block_spacing = 18
-    block_corner_radius = 6
+    block_spacing = 22
+    block_corner_radius = 8
     page_width, page_height = letter
     content_width = page_width - 2 * margin
 
-    # QR drawing sizes (display vs generation)
-    qr_display_size = 110            # size drawn on PDF (px)
-    qr_generate_size = qr_display_size * 2  # generate higher-res QR and scale down
-    qr_right_margin = 18
-
-    # Text layout inside block
-    left_col_x = margin + 16
-    label_col_x = left_col_x
-    value_col_x = left_col_x + 60
-    line_height = 14
-    course_wrap_width = 36  # approx characters before wrapping; tweak if needed
+    qr_display_size = 120
+    qr_generate_size = qr_display_size * 2
+    qr_right_margin = 20
 
     buffer = BytesIO()
     p = canvas.Canvas(buffer, pagesize=letter)
@@ -1056,126 +1240,153 @@ def download_student_exam_timetable():
 
     # -------- Header --------
     p.setFillColor(colors.HexColor("#1f77b4"))
-    p.rect(0, height-70, width, 70, fill=True, stroke=False)
+    p.rect(0, height-80, width, 80, fill=True, stroke=False)
     p.setFillColor(colors.white)
-    p.setFont("Helvetica-Bold", 16)
-    p.drawCentredString(width/2, height-45, "END OF SEMESTER EXAMINATION TIMETABLE")
-    p.setFont("Helvetica", 10)
-    p.drawCentredString(width/2, height-60, "Academic Year")
+    p.setFont("Helvetica-Bold", 18)
+    p.drawCentredString(width/2, height-48, "END OF SEMESTER EXAMINATION TIMETABLE")
+    p.setFont("Helvetica", 11)
+    p.drawCentredString(width/2, height-68, f"{profile.academic_year or 'Academic Year'}")
 
-    # starting top y for first block
-    y_top = height - 90
+    y_top = height - 100
 
     for e in entries:
-        # Split fields into left and right columns
-        left_fields = [
-        ("Name:", f"{profile.user.first_name} {profile.user.last_name}"),
-        ("Index:", index_number),
-        ("Course:", e.course or "")
-    ]
-    right_fields = [
-        ("Time:", f"{format_time(e.start_time)} - {format_time(e.end_time)}"),
-        ("Date:", e.date.strftime('%A, %d %B %Y')),
-        ("Room:", e.room or ""),
-        ("Building:", e.building or ""),
-        ("Floor:", e.floor or "")
-    ]
+        # 3-COLUMN LAYOUT
+        col1_fields = [
+            ("Name:", f"{user.first_name} {user.last_name}"),
+            ("Index #:", index_number),
+            ("Programme:", profile.current_programme or ""),
+            ("Course:", e.course or ""),
+            ("Level:", f"Level {profile.programme_level}")
+        ]
+        
+        col2_fields = [
+            ("Time:", f"{e.start_time.strftime('%H:%M')} - {e.end_time.strftime('%H:%M')}"),
+            ("Date:", e.date.strftime('%A, %d %B %Y')),
+            ("Room:", e.room or ""),
+            ("Building:", e.building or ""),
+            ("Floor:", e.floor or "")
+        ]
 
-    # Wrap long course name for left column
-    wrapped_course = textwrap.wrap(left_fields[2][1], width=24)
-    left_fields[2] = ("Course:", "\n".join(wrapped_course))
+        # Wrap long course name
+        wrapped_course = textwrap.wrap(col1_fields[3][1], width=20)
+        col1_fields[3] = ("Course:", "\n".join(wrapped_course))
+        
+        # Wrap long date
+        wrapped_date = textwrap.wrap(col2_fields[1][1], width=20)
+        col2_fields[1] = ("Date:", "\n".join(wrapped_date))
 
-    # Layout constants for this block
-    line_height = 14
-    top_padding = 20           # distance from top of block to first line (was small before)
-    bottom_padding = 16
-    col_gap = 20               # gap between left and right column start X
-    left_x = margin + 16
-    right_x = margin + content_width / 2
-    value_offset = 60          # label -> value offset
+        # Layout constants - INCREASED SPACING
+        line_height = 16
+        top_padding = 20
+        bottom_padding = 16
+        left_margin_col = 14
+        value_offset = 65
+        col_width = (content_width - 4 * left_margin_col - qr_display_size) / 2
 
-    # compute number of text lines required (largest of the two columns)
-    left_lines = sum(v.count("\n") + 1 for _, v in left_fields)
-    right_lines = sum(v.count("\n") + 1 for _, v in right_fields)
-    text_lines = max(left_lines, right_lines)
-
-    # block height: enough for text lines and QR area
-    text_block_height = text_lines * line_height + top_padding + bottom_padding
-    block_height = max(text_block_height, qr_display_size + top_padding + bottom_padding)
-    block_bottom = y_top - block_height
-
-    # new page check
-    if block_bottom < 40:
-        p.showPage()
-        # redraw header
-        p.setFillColor(colors.HexColor("#1f77b4"))
-        p.rect(0, height-70, width, 70, fill=True, stroke=False)
-        p.setFillColor(colors.white)
-        p.setFont("Helvetica-Bold", 16)
-        p.drawCentredString(width/2, height-45, "END OF SEMESTER EXAMINATION TIMETABLE")
-        p.setFont("Helvetica", 10)
-        p.drawCentredString(width/2, height-60, "Academic Year")
-        y_top = height - 90
+        # Calculate block height
+        col1_lines = sum(v.count("\n") + 1 for _, v in col1_fields)
+        col2_lines = sum(v.count("\n") + 1 for _, v in col2_fields)
+        text_lines = max(col1_lines, col2_lines)
+        text_block_height = text_lines * line_height + top_padding + bottom_padding
+        block_height = max(text_block_height, qr_display_size + top_padding + bottom_padding)
         block_bottom = y_top - block_height
 
-    # draw background block & accent
-    p.setFillColor(colors.HexColor("#f8f9fa"))
-    p.roundRect(margin, block_bottom, content_width, block_height, block_corner_radius, fill=True, stroke=False)
-    p.setFillColor(colors.HexColor("#1f77b4"))
-    p.roundRect(margin+8, block_bottom+8, 6, block_height-16, 3, fill=True, stroke=False)
+        # New page check - MORE SPACE AT BOTTOM
+        if block_bottom < 60:
+            p.showPage()
+            p.setFillColor(colors.HexColor("#1f77b4"))
+            p.rect(0, height-80, width, 80, fill=True, stroke=False)
+            p.setFillColor(colors.white)
+            p.setFont("Helvetica-Bold", 18)
+            p.drawCentredString(width/2, height-48, "END OF SEMESTER EXAMINATION TIMETABLE")
+            p.setFont("Helvetica", 11)
+            p.drawCentredString(width/2, height-68, f"{profile.academic_year or 'Academic Year'}")
+            y_top = height - 100
+            block_bottom = y_top - block_height
 
-    # start text at top_padding below block top (safer vertical position)
-    cur_y = block_bottom + block_height - top_padding
+        # Draw block background with border
+        p.setFillColor(colors.HexColor("#f8f9fa"))
+        p.roundRect(margin, block_bottom, content_width, block_height, block_corner_radius, fill=True, stroke=False)
+        
+        # Left accent bar - THICKER
+        p.setFillColor(colors.HexColor("#1f77b4"))
+        p.roundRect(margin+10, block_bottom+10, 8, block_height-20, 4, fill=True, stroke=False)
+        
+        # Border around box
+        p.setStrokeColor(colors.HexColor("#d0d0d0"))
+        p.setLineWidth(1)
+        p.roundRect(margin, block_bottom, content_width, block_height, block_corner_radius, fill=False, stroke=True)
 
-    # Draw left column
-    p.setFont("Helvetica-Bold", 10)
-    for label, value in left_fields:
-        p.drawString(left_x, cur_y, label)
-        p.setFont("Helvetica", 10)
-        for subline in value.split("\n"):
-            p.drawString(left_x + value_offset, cur_y, subline)
-            cur_y -= line_height
-        p.setFont("Helvetica-Bold", 10)
+        # VERTICALLY CENTERED START Y POSITION (aligned with QR code middle)
+        qr_x = margin + content_width - left_margin_col - qr_display_size - 8
+        qr_y = block_bottom + (block_height - qr_display_size) / 2
+        qr_center_y = qr_y + qr_display_size / 2
+        
+        # Start text from center of QR code, going upward
+        centered_start_y = qr_center_y + (text_lines * line_height / 2)
 
-    # Draw right column (start from same top baseline)
-    cur_y_right = block_bottom + block_height - top_padding
-    p.setFont("Helvetica-Bold", 10)
-    for label, value in right_fields:
-        p.drawString(right_x, cur_y_right, label)
-        p.setFont("Helvetica", 10)
-        for subline in value.split("\n"):
-            p.drawString(right_x + value_offset, cur_y_right, subline)
-            cur_y_right -= line_height
-        p.setFont("Helvetica-Bold", 10)
+        # Column 1 (Left) - VERTICALLY ALIGNED WITH QR CODE
+        col1_x = margin + left_margin_col + 8
+        cur_y = centered_start_y
+        p.setFont("Helvetica-Bold", 11)
+        p.setFillColor(colors.HexColor("#1f77b4"))
+        
+        for label, value in col1_fields:
+            p.drawString(col1_x, cur_y, label)
+            p.setFont("Helvetica", 10)
+            p.setFillColor(colors.black)
+            for subline in value.split("\n"):
+                p.drawString(col1_x + value_offset, cur_y, subline)
+                cur_y -= line_height
+            p.setFont("Helvetica-Bold", 11)
+            p.setFillColor(colors.HexColor("#1f77b4"))
 
-    # Prepare & place QR (bottom-right)
-    qr_data = (
-        f"Student: {profile.user.first_name} {profile.user.last_name}\n"
-        f"Index: {profile.user.user_id}\n"
-        f"Course: {e.course}\n"
-        f"Date: {e.date.strftime('%A, %d %B %Y')}\n"
-        f"Time: {format_time(e.start_time)} - {format_time(e.end_time)}\n"
-        f"Building: {e.building}\nRoom: {e.room}"
-    )
-    qr_img = generate_logo_qr(qr_data, logo_path='static/logo.png',
-                              final_size=qr_generate_size, logo_fraction=0.45,
-                              box_size=24, border=10)
-    qr_buffer = BytesIO()
-    qr_img.save(qr_buffer, format='PNG')
-    qr_buffer.seek(0)
-    qr_reader = ImageReader(qr_buffer)
-    qr_x = margin + content_width - qr_right_margin - qr_display_size
-    qr_y = block_bottom + bottom_padding
-    p.drawImage(qr_reader, qr_x, qr_y, qr_display_size, qr_display_size, preserveAspectRatio=True, mask='auto')
+        # Column 2 (Middle) - VERTICALLY ALIGNED WITH QR CODE
+        col2_x = margin + left_margin_col + col_width + left_margin_col + 8
+        cur_y = centered_start_y
+        p.setFont("Helvetica-Bold", 11)
+        p.setFillColor(colors.HexColor("#1f77b4"))
+        
+        for label, value in col2_fields:
+            p.drawString(col2_x, cur_y, label)
+            p.setFont("Helvetica", 10)
+            p.setFillColor(colors.black)
+            for subline in value.split("\n"):
+                p.drawString(col2_x + value_offset, cur_y, subline)
+                cur_y -= line_height
+            p.setFont("Helvetica-Bold", 11)
+            p.setFillColor(colors.HexColor("#1f77b4"))
 
-    # divider + update y_top
-    p.setStrokeColor(colors.HexColor("#e6e6e6"))
-    p.setLineWidth(0.5)
-    p.line(margin+8, block_bottom - 6, margin+content_width-8, block_bottom - 6)
+        # Column 3 (QR Code - Right) - VERTICALLY CENTERED
+        qr_data = (
+            f"Student: {user.first_name} {user.last_name}\n"
+            f"Matric: {index_number}\n"
+            f"Programme: {profile.current_programme}\n"
+            f"Level: {profile.programme_level}\n"
+            f"Course: {e.course}\n"
+            f"Date: {e.date.strftime('%A, %d %B %Y')}\n"
+            f"Time: {e.start_time.strftime('%H:%M')} - {e.end_time.strftime('%H:%M')}\n"
+            f"Building: {e.building}\nRoom: {e.room}"
+        )
+        qr_img = generate_logo_qr(qr_data,
+                                  logo_path='static/DHI-LOGO.png',
+                                  final_size=qr_generate_size,
+                                  box_size=10,
+                                  border=2)
+        qr_buffer = BytesIO()
+        qr_img.save(qr_buffer, format='PNG')
+        qr_buffer.seek(0)
+        qr_reader = ImageReader(qr_buffer)
+        p.drawImage(qr_reader, qr_x, qr_y, qr_display_size, qr_display_size, 
+                   preserveAspectRatio=True, mask='auto')
+        
+        # QR Code label
+        p.setFont("Helvetica", 8)
+        p.setFillColor(colors.HexColor("#666666"))
+        p.drawCentredString(qr_x + qr_display_size/2, qr_y - 8, "Scan for details")
 
-    y_top = block_bottom - block_spacing
+        y_top = block_bottom - block_spacing
 
-    # finish up
     p.showPage()
     p.save()
     buffer.seek(0)
@@ -1187,6 +1398,7 @@ def download_student_exam_timetable():
 @student_bp.route('/teacher-assessment', methods=['GET', 'POST'])
 @login_required
 def teacher_assessment():
+    """Teacher assessment form (tertiary students by programme/level)"""
     if not current_user.is_student:
         abort(403)
 
@@ -1200,9 +1412,7 @@ def teacher_assessment():
     if not profile:
         abort(404)
 
-    # -----------------------------
-    # STEP 1 DATA (teachers list)
-    # -----------------------------
+    # Get teachers teaching courses in this student's programme level
     teachers = (
         db.session.query(
             User,
@@ -1213,7 +1423,8 @@ def teacher_assessment():
         .join(Course, Course.id == TeacherCourseAssignment.course_id)
         .filter(
             User.role == 'teacher',
-            Course.assigned_class == profile.current_class
+            Course.programme_name == profile.current_programme,
+            Course.programme_level == str(profile.programme_level)
         )
         .group_by(User.id)
         .all()
@@ -1233,9 +1444,7 @@ def teacher_assessment():
     completed_count = sum(1 for teacher, _ in teachers if teacher.user_id in assessed_teacher_ids)
     progress_percent = int((completed_count / total_teachers) * 100) if total_teachers else 0
 
-    # -----------------------------
-    # STEP 2 DATA (questions)
-    # -----------------------------
+    # Get assessment questions
     questions_behavior = TeacherAssessmentQuestion.query.filter_by(
         category='teacher_behavior', is_active=True
     ).all()
@@ -1244,9 +1453,7 @@ def teacher_assessment():
         category='student_response', is_active=True
     ).all()
 
-    # -----------------------------
-    # STEP 2: Selected teacher
-    # -----------------------------
+    # Selected teacher
     selected_teacher = None
     teacher_user_id = request.args.get('teacher')
 
@@ -1260,9 +1467,7 @@ def teacher_assessment():
             role='teacher'
         ).first_or_404()
 
-    # -----------------------------
-    # SUBMIT ASSESSMENT
-    # -----------------------------
+    # Submit assessment
     if request.method == 'POST':
         teacher_id = request.form.get('teacher_id')
 
@@ -1276,12 +1481,16 @@ def teacher_assessment():
             flash("You have already assessed this teacher.", "danger")
             return redirect(url_for('student.teacher_assessment'))
 
+        # Store programme and level instead of class
         assessment = TeacherAssessment(
             student_id=current_user.user_id,
             teacher_id=teacher_id,
-            class_name=profile.current_class,
-            period_id=period.id
+            period_id=period.id,
+            programme_name=profile.current_programme  # NEW: store programme
         )
+        # Note: Store level in course_name temporarily or create new field
+        assessment.course_name = f"Level {profile.programme_level}"
+        
         db.session.add(assessment)
         db.session.flush()
 
@@ -1309,5 +1518,8 @@ def teacher_assessment():
         questions_response=questions_response,
         total_teachers=total_teachers,
         completed_count=completed_count,
-        progress_percent=progress_percent
+        progress_percent=progress_percent,
+        programme=profile.current_programme,
+        level=profile.programme_level
     )
+

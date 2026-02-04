@@ -132,13 +132,16 @@
     <!-- Already Registered Courses -->
     {% if registered_courses %}
       <div class="card shadow-sm border-0 mt-4">
-        <div class="card-header bg-light small fw-bold text-muted">
-          <i class="fas fa-list me-1"></i> Registered Courses
+        <div class="card-header bg-light small fw-bold text-muted d-flex justify-content-between align-items-center">
+          <span><i class="fas fa-list me-1"></i> Registered Courses</span>
+          <span class="badge bg-primary">{{ registered_courses|length }} Course{{ 's' if registered_courses|length != 1 else '' }}</span>
         </div>
         <ul class="list-group list-group-flush">
           {% for r in registered_courses %}
             <li class="list-group-item small d-flex justify-content-between align-items-center">
-              {{ r.course.code }} – {{ r.course.name }}
+              <div>
+                <strong>{{ r.course.code }}</strong> – {{ r.course.name }}
+              </div>
               <span class="badge {{ 'bg-secondary' if r.course.is_mandatory else 'bg-success' }}">
                 {{ 'Mandatory' if r.course.is_mandatory else 'Optional' }}
               </span>
@@ -149,8 +152,8 @@
           <a href="{{ url_for('student.download_registered_courses_pdf',
                               semester=form.semester.data,
                               academic_year=form.academic_year.data) }}"
-             class="btn btn-outline-secondary btn-sm">
-            <i class="fas fa-file-pdf me-1"></i> Download Registered Courses (PDF)
+             class="btn btn-outline-danger btn-sm">
+            <i class="fas fa-file-pdf me-1"></i> Download PDF
           </a>
         </div>
       </div>

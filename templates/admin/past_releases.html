@@ -1,0 +1,36 @@
+{% extends 'admin/layout.html' %}
+{% block title %}Past Released Results{% endblock %}
+
+{% block content %}
+<div class="container">
+  <h3>Past Released Results</h3>
+  {% if releases %}
+  <table class="table table-sm table-striped">
+    <thead>
+      <tr>
+        <th>Academic Year</th>
+        <th>Semester</th>
+        <th>Released At</th>
+        <th>Submitted By</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in releases %}
+      <tr>
+        <td>{{ r.academic_year|start_year }}</td>
+        <td>{{ r.semester }}</td>
+        <td>{{ r.released_at or '—' }}</td>
+        <td>{{ r.submitted_by_name or r.submitted_by or 'System' }}</td>
+        <td>
+          <a href="{{ url_for('grading.semester_details_query', academic_year=r.academic_year, semester=r.semester) }}" class="btn btn-sm btn-primary">View</a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="alert alert-info">No released results found.</div>
+  {% endif %}
+</div>
+{% endblock %}

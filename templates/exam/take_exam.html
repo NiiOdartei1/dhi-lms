@@ -2,95 +2,659 @@
 {% block title %}Take Exam – {{ exam_json.title }}{% endblock %}
 
 {% block content %}
-<div class="container py-4">
-  <div class="d-flex justify-content-between align-items-center mb-3">
-    <h4 id="exam-title">{{ exam_json.title }}</h4>
-    <div>
-      <strong>Time Left:</strong>
-      <span id="timer" class="text-danger fw-bold fs-5">--:--</span>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=Poppins:wght@500;600&display=swap');
+
+  :root {
+    --primary: #4e73df;
+    --success: #1cc88a;
+    --danger: #e74c3c;
+    --warning: #f39c12;
+    --info: #3498db;
+    --dark: #2c3e50;
+    --light: #f8f9fa;
+    --border: #e9ecef;
+    --text-primary: #2c3e50;
+    --text-muted: #7f8c8d;
+  }
+
+  * {
+    font-family: 'Sora', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  }
+
+  body {
+    background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+    min-height: 100vh;
+  }
+
+  /* ===== HEADER ===== */
+  .exam-header {
+    background: linear-gradient(135deg, var(--primary) 0%, var(--info) 100%);
+    color: white;
+    padding: 1.5rem 0;
+    position: sticky;
+    top: 0;
+    z-index: 999;
+    box-shadow: 0 4px 20px rgba(78, 115, 223, 0.15);
+  }
+
+  .header-content {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 2rem;
+  }
+
+  .header-left h4 {
+    margin: 0;
+    font-size: 1.3rem;
+    font-weight: 600;
+  }
+
+  .header-right {
+    display: flex;
+    align-items: center;
+    gap: 3rem;
+  }
+
+  .timer-display {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    background: rgba(255, 255, 255, 0.15);
+    padding: 0.75rem 1.25rem;
+    border-radius: 12px;
+    backdrop-filter: blur(10px);
+  }
+
+  .timer-display small {
+    opacity: 0.9;
+    font-size: 0.85rem;
+  }
+
+  #timer {
+    font-size: 1.4rem;
+    font-weight: 700;
+    font-family: 'Courier New', monospace;
+    letter-spacing: 2px;
+  }
+
+  .timer-display.critical #timer {
+    animation: pulse-timer 1s infinite;
+    color: #ffcccb;
+  }
+
+  @keyframes pulse-timer {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
+  }
+
+  /* ===== MAIN CONTAINER ===== */
+  .exam-container {
+    display: grid;
+    grid-template-columns: 1fr 340px;
+    gap: 2rem;
+    padding: 2rem;
+    max-width: 1400px;
+    margin: 0 auto;
+  }
+
+  /* ===== QUESTIONS SECTION ===== */
+  .questions-section {
+    background: white;
+    border-radius: 16px;
+    padding: 2rem;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.06);
+  }
+
+  .question-block {
+    margin-bottom: 2.5rem;
+    padding: 1.5rem;
+    background: #fafbfc;
+    border-left: 4px solid var(--primary);
+    border-radius: 12px;
+    transition: all 0.3s ease;
+    animation: slideInUp 0.4s ease forwards;
+  }
+
+  @keyframes slideInUp {
+    from {
+      opacity: 0;
+      transform: translateY(20px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .question-block:hover {
+    background: #fff;
+    box-shadow: 0 4px 12px rgba(78, 115, 223, 0.1);
+    border-left-width: 6px;
+  }
+
+  .question-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 1rem;
+    gap: 1rem;
+  }
+
+  .question-number {
+    font-weight: 700;
+    color: var(--primary);
+    font-size: 0.95rem;
+  }
+
+  .flag-btn {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    padding: 0.5rem 1rem;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+  }
+
+  .flag-btn:hover {
+    border-color: var(--warning);
+    color: var(--warning);
+  }
+
+  .flag-btn.flagged {
+    background: var(--warning);
+    color: white;
+    border-color: var(--warning);
+  }
+
+  .question-text {
+    font-size: 1.05rem;
+    font-weight: 500;
+    color: var(--text-primary);
+    margin-bottom: 1.25rem;
+    line-height: 1.6;
+  }
+
+  .options-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .form-check {
+    position: relative;
+    padding-left: 0;
+  }
+
+  .form-check-input {
+    display: none;
+  }
+
+  .form-check-label {
+    display: block;
+    padding: 0.75rem 1rem;
+    background: white;
+    border: 2px solid var(--border);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    margin-bottom: 0;
+    font-weight: 500;
+    color: var(--text-primary);
+  }
+
+  .form-check-label:hover {
+    border-color: var(--primary);
+    background: #f0f4ff;
+  }
+
+  .form-check-input:checked + .form-check-label {
+    background: linear-gradient(135deg, #e8f0ff 0%, #f0e8ff 100%);
+    border-color: var(--primary);
+    color: var(--primary);
+    font-weight: 600;
+  }
+
+  /* ===== SIDEBAR ===== */
+  .exam-sidebar {
+    position: sticky;
+    top: 100px;
+    height: fit-content;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+
+  .sidebar-card {
+    background: white;
+    border-radius: 16px;
+    padding: 1.5rem;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.06);
+  }
+
+  .sidebar-title {
+    font-size: 0.9rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-muted);
+    margin-bottom: 1rem;
+  }
+
+  .progress-container {
+    margin-bottom: 1.5rem;
+  }
+
+  .progress-bar-custom {
+    height: 8px;
+    background: var(--border);
+    border-radius: 4px;
+    overflow: hidden;
+    margin-bottom: 0.75rem;
+  }
+
+  .progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--primary) 0%, var(--success) 100%);
+    transition: width 0.3s ease;
+    border-radius: 4px;
+  }
+
+  .progress-stats {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    font-size: 0.85rem;
+  }
+
+  .stat-item {
+    display: flex;
+    justify-content: space-between;
+  }
+
+  .stat-label {
+    color: var(--text-muted);
+    font-weight: 500;
+  }
+
+  .stat-value {
+    font-weight: 700;
+    color: var(--text-primary);
+  }
+
+  /* ===== PALETTE ===== */
+  .palette-grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 0.5rem;
+    max-height: 300px;
+    overflow-y: auto;
+    padding-right: 0.5rem;
+    margin-bottom: 1rem;
+  }
+
+  .palette-btn {
+    width: 100%;
+    aspect-ratio: 1;
+    border: 2px solid var(--border);
+    border-radius: 8px;
+    background: white;
+    color: var(--text-primary);
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-size: 0.85rem;
+    position: relative;
+  }
+
+  .palette-btn:hover {
+    border-color: var(--primary);
+    transform: translateY(-2px);
+  }
+
+  .palette-btn.unanswered {
+    background: #f0f0f0;
+    color: var(--text-muted);
+  }
+
+  .palette-btn.answered {
+    background: var(--success);
+    color: white;
+    border-color: var(--success);
+  }
+
+  .palette-btn.current {
+    background: var(--primary);
+    color: white;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(78, 115, 223, 0.2);
+  }
+
+  .palette-btn.flagged {
+    background: var(--warning);
+    color: white;
+    border-color: var(--warning);
+  }
+
+  .palette-btn.flagged.current {
+    background: linear-gradient(135deg, var(--primary) 0%, var(--warning) 100%);
+  }
+
+  .palette-legend {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0.5rem;
+    font-size: 0.75rem;
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border);
+  }
+
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .legend-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 2px;
+  }
+
+  /* ===== PAGINATION ===== */
+  .pagination-nav {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    margin-top: 2rem;
+    padding-top: 2rem;
+    border-top: 1px solid var(--border);
+  }
+
+  .pagination-info {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    font-weight: 500;
+  }
+
+  .pagination-buttons {
+    display: flex;
+    gap: 0.5rem;
+  }
+
+  .nav-btn {
+    padding: 0.75rem 1.5rem;
+    background: white;
+    border: 2px solid var(--border);
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: 600;
+    transition: all 0.2s ease;
+    color: var(--primary);
+  }
+
+  .nav-btn:hover:not(:disabled) {
+    background: var(--primary);
+    color: white;
+    border-color: var(--primary);
+    transform: translateY(-2px);
+  }
+
+  .nav-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  /* ===== SUBMIT SECTION ===== */
+  .submit-section {
+    display: none;
+    margin-top: 2rem;
+    padding: 2rem;
+    background: linear-gradient(135deg, #e8f5e9 0%, #e0f2f1 100%);
+    border-radius: 16px;
+    text-align: right;
+    border-left: 4px solid var(--success);
+  }
+
+  .submit-section.show {
+    display: block;
+    animation: slideInUp 0.4s ease;
+  }
+
+  .submit-btn {
+    padding: 1rem 2rem;
+    background: linear-gradient(135deg, var(--success) 0%, #16a085 100%);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-weight: 700;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    box-shadow: 0 4px 12px rgba(28, 200, 138, 0.3);
+  }
+
+  .submit-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(28, 200, 138, 0.4);
+  }
+
+  .submit-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  /* ===== RESPONSIVE ===== */
+  @media (max-width: 1024px) {
+    .exam-container {
+      grid-template-columns: 1fr;
+      gap: 1.5rem;
+    }
+
+    .exam-sidebar {
+      position: relative;
+      top: 0;
+    }
+
+    .header-right {
+      gap: 1rem;
+    }
+
+    .timer-display {
+      padding: 0.5rem 1rem;
+    }
+  }
+
+  @media (max-width: 768px) {
+    .exam-header {
+      padding: 1rem 0;
+    }
+
+    .header-content {
+      flex-direction: column;
+      gap: 1rem;
+    }
+
+    .header-left h4 {
+      font-size: 1.1rem;
+    }
+
+    .exam-container {
+      padding: 1rem;
+      gap: 1rem;
+    }
+
+    .questions-section {
+      padding: 1.25rem;
+    }
+
+    .palette-grid {
+      grid-template-columns: repeat(5, 1fr);
+    }
+
+    .sidebar-card {
+      padding: 1rem;
+    }
+
+    .pagination-nav {
+      flex-direction: column;
+      gap: 1rem;
+    }
+
+    .pagination-buttons {
+      width: 100%;
+    }
+
+    .nav-btn {
+      flex: 1;
+    }
+  }
+
+  /* ===== SCROLL STYLING ===== */
+  .palette-grid::-webkit-scrollbar {
+    width: 4px;
+  }
+
+  .palette-grid::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .palette-grid::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 2px;
+  }
+
+  .palette-grid::-webkit-scrollbar-thumb:hover {
+    background: var(--text-muted);
+  }
+</style>
+
+<!-- Sticky Header -->
+<div class="exam-header">
+  <div class="container-fluid px-3 px-md-4">
+    <div class="header-content">
+      <div class="header-left">
+        <h4 id="exam-title">{{ exam_json.title }}</h4>
+      </div>
+      <div class="header-right">
+        <div class="timer-display" id="timerDisplay">
+          <small><i class="fas fa-hourglass-end"></i> Time Left</small>
+          <div id="timer" class="ms-2">--:--</div>
+        </div>
+      </div>
     </div>
   </div>
+</div>
 
-  <form id="exam-form"
-        method="POST"
-        action="{{ url_for('exam.submit_exam', exam_id=exam_json.id, attempt_id=attempt.id) }}">
-    <!-- Proper hidden CSRF input -->
-    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<!-- Main Exam Container -->
+<form id="exam-form" 
+      method="POST" 
+      action="{{ url_for('exam.submit_exam', exam_id=exam_json.id, attempt_id=attempt.id) }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
-    <div class="row">
-      <!-- Main question area -->
-      <div class="col-lg-8">
-        <div id="questions-container"></div>
+  <div class="exam-container">
+    <!-- Questions Column -->
+    <div>
+      <div class="questions-section" id="questions-container"></div>
 
-        <nav class="mt-4" aria-label="Exam Navigation">
-          <ul class="pagination justify-content-center" id="pagination"></ul>
-        </nav>
-
-        <div id="submit-container" class="text-end mt-3" style="display: none;">
-          <button type="submit" class="btn btn-success">Submit Exam</button>
+      <!-- Pagination Navigation -->
+      <div class="pagination-nav">
+        <div class="pagination-info">
+          <span id="page-info">Page 1</span>
+        </div>
+        <div class="pagination-buttons">
+          <button type="button" class="nav-btn" id="prevBtn">← Previous</button>
+          <button type="button" class="nav-btn" id="nextBtn">Next →</button>
         </div>
       </div>
 
-      <!-- Right sidebar: KNUST-style palette + stats -->
-      <div class="col-lg-4">
-        <div class="card mb-3 shadow-sm">
-          <div class="card-body">
-            <h6 class="mb-2">Question Palette</h6>
-
-            <!-- Progress bar -->
-            <div class="progress mb-2" style="height:18px;">
-              <div id="exam-progress" 
-                   class="progress-bar" 
-                   role="progressbar" 
-                   style="width: 0%; background-color:#006400;"
-                   aria-valuenow="0" 
-                   aria-valuemin="0" 
-                   aria-valuemax="100">0%</div>
-            </div>
-
-            <div class="d-flex justify-content-between align-items-center mb-2 small">
-              <div><strong>Total:</strong> <span id="pal-total">0</span></div>
-              <div><strong>Answered:</strong> <span id="pal-answered">0</span></div>
-              <div><strong>Unanswered:</strong> <span id="pal-unanswered">0</span></div>
-            </div>
-
-            <div id="palette-legend" class="mb-2 small">
-  <span class="badge me-2" style="background:#6c757d"> &nbsp; </span> Unanswered
-  <span class="badge bg-success ms-3 me-2"> &nbsp; </span> Answered
-  <span class="badge bg-primary ms-3 me-2"> &nbsp; </span> Current
-  <span class="badge" style="background:#fd7e14; margin-left:1rem;"> &nbsp; </span> Flagged
-</div>
-
-
-            <!-- Palette grid -->
-            <div id="question-palette" class="d-flex flex-wrap gap-2" 
-                 style="max-height:380px; overflow:auto; padding-right:6px;">
-            </div>
-
-            <div class="mt-3 small text-muted">
-              Click any number to jump to that question.
-            </div>
-          </div>
-        </div>
-
-        <!-- optional small exam info card -->
-        <div class="card shadow-sm">
-          <div class="card-body small">
-            <div><strong>Duration:</strong> {{ exam_json.duration_minutes }} minutes</div>
-            <div class="mt-1"><strong>Total Questions:</strong> <span id="info-total">{{ exam_json.questions|length }}</span></div>
-          </div>
-        </div>
+      <!-- Submit Section -->
+      <div class="submit-section" id="submit-container">
+        <button type="submit" class="submit-btn">
+          <i class="fas fa-paper-plane"></i> Submit Exam
+        </button>
       </div>
     </div>
-  </form>
-</div>
 
-<!-- embed exam data safely -->
+    <!-- Sidebar -->
+    <aside class="exam-sidebar">
+      <!-- Progress Card -->
+      <div class="sidebar-card">
+        <div class="sidebar-title"><i class="fas fa-chart-pie"></i> Progress</div>
+        
+        <div class="progress-container">
+          <div class="progress-bar-custom">
+            <div class="progress-fill" id="exam-progress" style="width: 0%"></div>
+          </div>
+        </div>
+
+        <div class="progress-stats">
+          <div class="stat-item">
+            <span class="stat-label">Total</span>
+            <span class="stat-value" id="pal-total">0</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-label">Answered</span>
+            <span class="stat-value" id="pal-answered">0</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Question Palette Card -->
+      <div class="sidebar-card">
+        <div class="sidebar-title"><i class="fas fa-th"></i> Question Palette</div>
+        
+        <div class="palette-grid" id="question-palette"></div>
+
+        <div class="palette-legend" id="palette-legend">
+          <div class="legend-item">
+            <div class="legend-dot" style="background: #f0f0f0; border: 1px solid #ccc;"></div>
+            <span>Unanswered</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-dot" style="background: var(--success);"></div>
+            <span>Answered</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-dot" style="background: var(--primary); box-shadow: 0 0 0 2px rgba(78, 115, 223, 0.3);"></div>
+            <span>Current</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-dot" style="background: var(--warning);"></div>
+            <span>Flagged</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Exam Info Card -->
+      <div class="sidebar-card">
+        <div class="sidebar-title"><i class="fas fa-info-circle"></i> Exam Info</div>
+        <div class="progress-stats">
+          <div class="stat-item">
+            <span class="stat-label">Duration</span>
+            <span class="stat-value">{{ exam_json.duration_minutes }}m</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-label">Questions</span>
+            <span class="stat-value" id="info-total">{{ exam_json.questions|length }}</span>
+          </div>
+        </div>
+      </div>
+    </aside>
+  </div>
+</form>
+
+<!-- Embedded Data -->
 <script id="exam-data" type="application/json">
 {{ exam_json | tojson }}
 </script>
 
-{# pass the attempt.start_time (ISO) from server for a reliable source of truth #}
 <script type="application/json" id="attempt-data">
 {
   "attempt_id": {{ attempt.id }},
@@ -99,87 +663,50 @@
 }
 </script>
 
-<style>
-/* small palette button style (square) */
-.palette-btn {
-  width: 38px;
-  height: 38px;
-  padding: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 4px;
-  font-weight: 600;
-  cursor: pointer;
-  border: 1px solid rgba(0,0,0,0.08);
-  box-shadow: 0 1px 0 rgba(0,0,0,0.04);
-}
-.palette-btn.unanswered { background: #6c757d; color: #fff; } /* gray */
-.palette-btn.answered { background: #198754; color: #fff; }   /* green */
-.palette-btn.current  { background: #0d6efd; color: #fff; }   /* blue */
-.palette-btn:focus { outline: 2px solid rgba(13,110,253,0.25); box-shadow: none; }
-
-/* smooth progress animation */
-#exam-progress {
-  transition: width 300ms ease, background-color 200ms ease, color 200ms ease;
-}
-.palette-btn.flagged { background: #fd7e14 !important; color: #fff; } /* orange */
-.palette-btn.flagged.current { background: #ff5722 !important; } /* stronger orange if current */
-.flag-btn {
-  font-size: 0.85rem;
-  padding: 2px 8px;
-  border-radius: 4px;
-  cursor: pointer;
-}
-.flag-btn.flagged {
-  background-color: #fd7e14;
-  color: white;
-}
-</style>
-
 <script>
 document.addEventListener("DOMContentLoaded", () => {
-  // --- parse embedded data ---
-  const exam       = JSON.parse(document.getElementById("exam-data").textContent);
+  // Parse embedded data
+  const exam = JSON.parse(document.getElementById("exam-data").textContent);
   const attemptObj = JSON.parse(document.getElementById("attempt-data").textContent);
-  const attemptId  = attemptObj.attempt_id;
+  const attemptId = attemptObj.attempt_id;
   const attemptStartIso = attemptObj.attempt_start || null;
   const attemptSubmitted = attemptObj.attempt_submitted === 'true';
 
-  // config
-  const examId     = exam.id;
-  const duration   = Number(exam.duration_minutes) * 60; // seconds
-  const perPage    = 5;
-  const totalQs    = exam.questions.length;
+  // Config
+  const examId = exam.id;
+  const duration = Number(exam.duration_minutes) * 60;
+  const perPage = 5;
+  const totalQs = exam.questions.length;
   const totalPages = Math.max(1, Math.ceil(totalQs / perPage));
 
-  // localStorage key helper
+  // Storage key helper
   const storageKey = () => `exam_${examId}_attempt_${attemptId}_answers`;
 
-  // DOM refs
-  const timerEl            = document.getElementById("timer");
+  // DOM references
+  const timerEl = document.getElementById("timer");
+  const timerDisplay = document.getElementById("timerDisplay");
   const questionsContainer = document.getElementById("questions-container");
-  const paginationEl       = document.getElementById("pagination");
-  const submitContainer    = document.getElementById("submit-container");
-  const form               = document.getElementById("exam-form");
-  const paletteContainer   = document.getElementById("question-palette");
-  const palTotalEl         = document.getElementById("pal-total");
-  const palAnsweredEl      = document.getElementById("pal-answered");
-  const palUnansweredEl    = document.getElementById("pal-unanswered");
+  const submitContainer = document.getElementById("submit-container");
+  const form = document.getElementById("exam-form");
+  const paletteContainer = document.getElementById("question-palette");
+  const palTotalEl = document.getElementById("pal-total");
+  const palAnsweredEl = document.getElementById("pal-answered");
+  const prevBtn = document.getElementById("prevBtn");
+  const nextBtn = document.getElementById("nextBtn");
+  const pageInfo = document.getElementById("page-info");
 
-  const csrfTokenEl        = document.querySelector('input[name="csrf_token"]');
-  const csrfToken          = csrfTokenEl ? csrfTokenEl.value : null;
-  window.csrfToken = csrfToken; // convenience for other calls (autosave)
+  const csrfTokenEl = document.querySelector('input[name="csrf_token"]');
+  const csrfToken = csrfTokenEl ? csrfTokenEl.value : null;
+  window.csrfToken = csrfToken;
 
-  // state
+  // State
   let currentPage = 1;
-  let answers = {};               // keyed by question id -> selected option id
+  let answers = {};
   let countdownTimerId = null;
   let autoSubmitting = false;
-  let flagged = {}; // question_id -> true/false
-
-  // parse attempt start time (server-side truth). If missing, do NOT auto-start timer.
+  let flagged = {};
   let startTime = null;
+
   if (attemptStartIso) {
     const parsed = new Date(attemptStartIso);
     if (!isNaN(parsed.getTime())) startTime = parsed;
@@ -191,12 +718,12 @@ document.addEventListener("DOMContentLoaded", () => {
     return;
   }
 
-  // -------- localStorage helpers ----------
+  // Storage helpers
   function saveAnswersToStorage() {
     try {
       localStorage.setItem(storageKey(), JSON.stringify(answers));
     } catch (e) {
-      console.warn("[TakeExam] could not save answers to storage:", e);
+      console.warn("Could not save answers:", e);
     }
   }
 
@@ -206,12 +733,10 @@ document.addEventListener("DOMContentLoaded", () => {
       if (!raw) return;
       const parsed = JSON.parse(raw);
       if (parsed && typeof parsed === 'object') {
-        // parsed may have string keys; ensure numeric keys are used consistently
         answers = Object.assign({}, parsed);
-        console.info("[TakeExam] restored answers from localStorage:", answers);
       }
     } catch (e) {
-      console.warn("[TakeExam] could not load answers from storage:", e);
+      console.warn("Could not load answers:", e);
     }
   }
 
@@ -219,28 +744,55 @@ document.addEventListener("DOMContentLoaded", () => {
     try {
       localStorage.removeItem(storageKey());
     } catch (e) {
-      console.warn("[TakeExam] could not clear answers from storage:", e);
+      console.warn("Could not clear answers:", e);
     }
   }
 
-  // Load saved answers from localStorage (so reloads restore)
+  function saveFlagsToStorage() {
+    try {
+      localStorage.setItem(`flags_${examId}_${attemptId}`, JSON.stringify(flagged));
+    } catch (e) {
+      console.warn("Could not save flags:", e);
+    }
+  }
+
+  function loadFlagsFromStorage() {
+    try {
+      const raw = localStorage.getItem(`flags_${examId}_${attemptId}`);
+      if (!raw) return;
+      flagged = JSON.parse(raw) || {};
+    } catch (e) {
+      console.warn("Could not load flags:", e);
+    }
+  }
+
+  function clearFlagsFromStorage() {
+    try {
+      localStorage.removeItem(`flags_${examId}_${attemptId}`);
+    } catch (e) { }
+  }
+
+  // Initialize
   loadAnswersFromStorage();
-
-  // Load saved flags (so flagged status shows up in palette after reload)
   loadFlagsFromStorage();
-
-  // initialize UI
   renderPalette();
   renderQuestions(currentPage);
-  renderPagination();
   updateSubmitVisibility();
   updatePaletteCounts();
-
 
   if (startTime) startCountdown();
   else timerEl.textContent = formatTime(duration);
 
-  // ---- rendering / pagination / handlers ----
+  // Event listeners
+  prevBtn.addEventListener("click", () => {
+    if (currentPage > 1) renderQuestions(currentPage - 1);
+  });
+
+  nextBtn.addEventListener("click", () => {
+    if (currentPage < totalPages) renderQuestions(currentPage + 1);
+  });
+
+  // Rendering functions
   function renderQuestions(page) {
     currentPage = page;
     questionsContainer.innerHTML = "";
@@ -250,64 +802,65 @@ document.addEventListener("DOMContentLoaded", () => {
 
     for (let i = start; i < end; i++) {
       const q = exam.questions[i];
-      // wrapper -- include data-index (0-based position in exam), and data-qid
       const block = document.createElement("div");
-      block.className = "mb-4 p-3 border rounded";
-      block.id = `q-block-${i}`;          // index-based id for palette navigation
+      block.className = "question-block";
+      block.id = `q-block-${i}`;
       block.dataset.idx = i;
       block.dataset.qid = q.id;
 
-      // question header
       const header = document.createElement("div");
-      header.className = "d-flex justify-content-between align-items-center";
-      header.innerHTML = `<strong>Question ${i+1}:</strong>`;
+      header.className = "question-header";
 
-      // 🚩 flag button
+      const num = document.createElement("div");
+      num.className = "question-number";
+      num.innerHTML = `Question ${i + 1} of ${totalQs}`;
+
       const flagBtn = document.createElement("button");
       flagBtn.type = "button";
-      flagBtn.className = "btn btn-sm btn-outline-secondary flag-btn";
-      flagBtn.textContent = flagged[q.id] ? "🚩 Flagged" : "Flag";
+      flagBtn.className = "flag-btn";
+      flagBtn.innerHTML = flagged[q.id] ? '<i class="fas fa-flag"></i> Flagged' : '<i class="fas fa-flag"></i> Flag';
       if (flagged[q.id]) flagBtn.classList.add("flagged");
 
-      flagBtn.addEventListener("click", () => {
+      flagBtn.addEventListener("click", (e) => {
+        e.preventDefault();
         flagged[q.id] = !flagged[q.id];
         saveFlagsToStorage();
-        flagBtn.textContent = flagged[q.id] ? "🚩 Flagged" : "Flag";
+        flagBtn.innerHTML = flagged[q.id] ? '<i class="fas fa-flag"></i> Flagged' : '<i class="fas fa-flag"></i> Flag';
         flagBtn.classList.toggle("flagged", flagged[q.id]);
         updatePaletteForQuestionIndex(i);
-      }); 
+      });
 
+      header.appendChild(num);
       header.appendChild(flagBtn);
-      block.append(header);
+      block.appendChild(header);
 
-      // question body (text)
-      const body = document.createElement("div");
-      body.className = "mt-2 mb-2";
-      body.innerHTML = q.question_text;
+      const questionText = document.createElement("div");
+      questionText.className = "question-text";
+      questionText.innerHTML = q.question_text;
+      block.appendChild(questionText);
 
-      block.append(header, body);
+      const optionsGroup = document.createElement("div");
+      optionsGroup.className = "options-group";
 
-      // options
       q.options.forEach(opt => {
         const optId = `q${q.id}_o${opt.id}`;
-        const radioWrap = document.createElement("div");
-        radioWrap.className = "form-check";
+        const checkWrap = document.createElement("div");
+        checkWrap.className = "form-check";
 
         const radio = document.createElement("input");
         radio.type = "radio";
         radio.name = `answers[${q.id}]`;
         radio.id = optId;
         radio.value = opt.id;
-        radio.className = "form-check-input me-2";
+        radio.className = "form-check-input";
 
-        // restore previously chosen answer (from answers object which was loaded)
-        if (answers[q.id] && String(answers[q.id]) === String(opt.id)) radio.checked = true;
+        if (answers[q.id] && String(answers[q.id]) === String(opt.id)) {
+          radio.checked = true;
+        }
 
         radio.addEventListener("change", () => {
           answers[q.id] = opt.id;
-          // persist locally immediately
           saveAnswersToStorage();
-          // still autosave to server
           autosave(q.id, opt.id);
           updatePaletteForQuestionIndex(i);
           updatePaletteCounts();
@@ -319,166 +872,87 @@ document.addEventListener("DOMContentLoaded", () => {
         label.className = "form-check-label";
         label.textContent = opt.text;
 
-        radioWrap.append(radio, label);
-        block.appendChild(radioWrap);
+        checkWrap.appendChild(radio);
+        checkWrap.appendChild(label);
+        optionsGroup.appendChild(checkWrap);
       });
 
+      block.appendChild(optionsGroup);
       questionsContainer.appendChild(block);
     }
 
-    // after rendering questions, update pagination active state and palette current highlight
-    renderPagination();
+    renderPaginationButtons();
     highlightCurrentPaletteRange();
+    updatePageInfo();
   }
 
-  // flag management
-  function saveFlagsToStorage() {
-    try {
-      localStorage.setItem(`flags_${examId}_${attemptId}`, JSON.stringify(flagged));
-    } catch (e) { console.warn("Could not save flags:", e); }
-  }
-  function loadFlagsFromStorage() {
-    try {
-      const raw = localStorage.getItem(`flags_${examId}_${attemptId}`);
-      if (!raw) return;
-      flagged = JSON.parse(raw) || {};
-    } catch (e) { console.warn("Could not load flags:", e); }
-  }
-  function clearFlagsFromStorage() {
-    try { localStorage.removeItem(`flags_${examId}_${attemptId}`); } catch {}
+  function updatePageInfo() {
+    pageInfo.textContent = `Page ${currentPage} of ${totalPages}`;
   }
 
-  function renderPagination() {
-    paginationEl.innerHTML = "";
-    const makeBtn = (num, txt, disabled = false, active = false) => {
-      const li = document.createElement("li");
-      li.className = "page-item" + (disabled ? " disabled" : "") + (active ? " active" : "");
-      const a = document.createElement("a");
-      a.className = "page-link";
-      a.href = "#";
-      a.textContent = txt || num;
-      a.addEventListener("click", e => {
-        e.preventDefault();
-        if (!disabled) {
-          renderQuestions(num);
-          // smooth scroll to top of questions
-          window.scrollTo({ top: document.getElementById('questions-container').offsetTop - 20, behavior: 'smooth' });
-        }
-      });
-      li.appendChild(a);
-      return li;
-    };
-
-    paginationEl.append(
-      makeBtn(currentPage - 1, "« Prev", currentPage === 1),
-      ...Array.from({ length: totalPages }, (_, i) =>
-        makeBtn(i + 1, null, false, currentPage === i + 1)
-      ),
-      makeBtn(currentPage + 1, "Next »", currentPage === totalPages)
-    );
-  }
-
-  function updateSubmitVisibility() {
-    submitContainer.style.display = (currentPage === totalPages) ? "block" : "none";
-  }
-
-  // ---- palette rendering ----
   function renderPalette() {
     paletteContainer.innerHTML = "";
     for (let i = 0; i < totalQs; i++) {
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = "palette-btn unanswered";
-      btn.dataset.idx = i; // zero-based index in exam.questions array
+      btn.dataset.idx = i;
       btn.innerText = i + 1;
       btn.addEventListener("click", (e) => {
+        e.preventDefault();
         const targetIndex = Number(e.currentTarget.dataset.idx);
-        // compute page and local index
         const page = Math.floor(targetIndex / perPage) + 1;
         renderQuestions(page);
-        // small delay to allow rendering
         setTimeout(() => {
           scrollToQuestionIndex(targetIndex);
-          // highlight the clicked button as current
           updatePaletteForQuestionIndex(targetIndex);
         }, 80);
       });
       paletteContainer.appendChild(btn);
     }
     updatePaletteCounts();
-    highlightCurrentPaletteRange();
   }
 
   function updatePaletteCounts() {
     const answeredCount = Object.keys(answers).length;
     palTotalEl.textContent = totalQs;
     palAnsweredEl.textContent = answeredCount;
-    palUnansweredEl.textContent = Math.max(0, totalQs - answeredCount);
 
-    // update palette button classes
-    for (let i = 0; i < totalQs; i++) {
-      updatePaletteForQuestionIndex(i, /*noCountsUpdate*/ true);
-    }
-
-    // update progress bar
     const percent = totalQs > 0 ? Math.round((answeredCount / totalQs) * 100) : 0;
-    const progressEl = document.getElementById("exam-progress");
-    if (progressEl) {
-      progressEl.style.width = percent + "%";
-      progressEl.setAttribute("aria-valuenow", percent);
-      progressEl.textContent = percent + "%";
+    document.getElementById("exam-progress").style.width = percent + "%";
 
-      // change color based on % (red <40, yellow 40–70, green >70)
-      if (percent < 40) {
-        progressEl.style.backgroundColor = "#dc3545"; // red
-        progressEl.style.color = "#fff";
-      } else if (percent < 70) {
-        progressEl.style.backgroundColor = "#ffc107"; // yellow
-        progressEl.style.color = "#000";
-      } else {
-        progressEl.style.backgroundColor = "#198754"; // green
-        progressEl.style.color = "#fff";
-      }
+    for (let i = 0; i < totalQs; i++) {
+      updatePaletteForQuestionIndex(i, true);
     }
   }
 
-  function updatePaletteForQuestionIndex(index, noCountsUpdate=false) {
+  function updatePaletteForQuestionIndex(index, noCountsUpdate = false) {
     const q = exam.questions[index];
     const btn = paletteContainer.querySelector(`button[data-idx="${index}"]`);
     if (!btn) return;
 
-    // answered if answers has entry for this q.id
+    btn.classList.remove("answered", "current", "flagged", "unanswered");
+
     if (answers[q.id]) {
-      btn.classList.remove("unanswered");
       btn.classList.add("answered");
-      btn.classList.remove("current");
     } else {
-      btn.classList.remove("answered");
       btn.classList.add("unanswered");
-      btn.classList.remove("current");
     }
 
-    // mark current-range questions (those on current page) as 'current' style overlay
     const startIndex = (currentPage - 1) * perPage;
     const endIndex = Math.min(startIndex + perPage - 1, totalQs - 1);
     if (index >= startIndex && index <= endIndex) {
       btn.classList.add("current");
-    } else {
-      btn.classList.remove("current");
     }
 
-    // ✅ add this part for flags
     if (flagged[q.id]) {
       btn.classList.add("flagged");
-    } else {
-      btn.classList.remove("flagged");
     }
 
     if (!noCountsUpdate) updatePaletteCounts();
   }
 
   function highlightCurrentPaletteRange() {
-    // ensure palette reflects current page
     for (let i = 0; i < totalQs; i++) {
       updatePaletteForQuestionIndex(i, true);
     }
@@ -488,16 +962,23 @@ document.addEventListener("DOMContentLoaded", () => {
     const el = document.getElementById(`q-block-${index}`);
     if (el) {
       el.scrollIntoView({ behavior: "smooth", block: "center" });
-      // also focus first input within the question
-      const input = el.querySelector('input[type="radio"], input[type="text"], textarea');
-      if (input) input.focus({ preventScroll: true });
     }
   }
 
-  // ---- countdown / submission (unchanged except small integration) ----
+  function renderPaginationButtons() {
+    prevBtn.disabled = currentPage === 1;
+    nextBtn.disabled = currentPage === totalPages;
+  }
+
+  function updateSubmitVisibility() {
+    const showSubmit = currentPage === totalPages;
+    submitContainer.classList.toggle("show", showSubmit);
+  }
+
+  // Timer functions
   function startCountdown() {
     if (!startTime || isNaN(startTime.getTime())) {
-      console.error("[TakeExam] cannot start countdown: invalid startTime");
+      console.error("Cannot start countdown: invalid startTime");
       return;
     }
     if (countdownTimerId) clearTimeout(countdownTimerId);
@@ -509,28 +990,34 @@ document.addEventListener("DOMContentLoaded", () => {
     const elapsed = Math.floor((now - startTime) / 1000);
     let left = duration - elapsed;
 
-    // enforce exam hard end (server-provided exam.end_datetime)
     const examEnd = new Date(exam.end_datetime);
     const hardClose = Math.floor((examEnd - now) / 1000);
     if (hardClose < left) left = hardClose;
 
     if (left <= 0) {
       timerEl.textContent = "00:00";
+      timerDisplay.classList.add("critical");
       disableInputs();
       if (!autoSubmitting) {
         autoSubmitting = true;
-        // clear storage then submit so reload won't resurrect answers
         clearAnswersFromStorage();
         injectAnswers();
         ensureCsrf();
         setTimeout(() => {
-          try { form.submit(); } catch (err) { console.error("[TakeExam] auto-submit failed:", err); }
+          try {
+            form.submit();
+          } catch (err) {
+            console.error("Auto-submit failed:", err);
+          }
         }, 250);
       }
       return;
     }
 
     timerEl.textContent = formatTime(left);
+    if (left <= 300) {
+      timerDisplay.classList.add("critical");
+    }
     countdownTimerId = setTimeout(tickCountdown, 1000);
   }
 
@@ -544,9 +1031,8 @@ document.addEventListener("DOMContentLoaded", () => {
     document.querySelectorAll("#questions-container input, #questions-container button").forEach(el => el.disabled = true);
   }
 
-  // ---- form helpers / autosave ----
   function injectAnswers() {
-    document.querySelectorAll('input[name^="answers["][data-injected="true"]').forEach(n => n.remove());
+    document.querySelectorAll('input[data-injected="true"]').forEach(n => n.remove());
     Object.entries(answers).forEach(([qid, oid]) => {
       const hidden = document.createElement("input");
       hidden.type = "hidden";
@@ -593,13 +1079,13 @@ document.addEventListener("DOMContentLoaded", () => {
           question_id: qid,
           selected_option_id: oid
         })
-      }).catch(e => console.warn("[TakeExam] autosave error:", e));
+      }).catch(e => console.warn("Autosave error:", e));
     } catch (err) {
-      console.error("[TakeExam] autosave exception:", err);
+      console.error("Autosave exception:", err);
     }
   }
 
-  // final submission
+  // Form submission
   let isSubmitting = false;
   form.addEventListener("submit", function (e) {
     injectAnswers();
@@ -610,12 +1096,12 @@ document.addEventListener("DOMContentLoaded", () => {
       return false;
     }
 
-    // clear local storage so selections don't persist after a final submit
     clearAnswersFromStorage();
+    clearFlagsFromStorage();
     isSubmitting = true;
   });
 
-  // warn on page unload
+  // Warn on unload
   window.addEventListener("beforeunload", function (e) {
     if (!autoSubmitting && !isSubmitting && Object.keys(answers).length > 0) {
       e.preventDefault();
@@ -624,17 +1110,15 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
-  // Expose a small API to prefill answers (in case server returns previously-saved answers via AJAX)
+  // Expose API
   window.takeExam = window.takeExam || {};
-  window.takeExam.setAnswers = function(initialAnswers) {
-    // initialAnswers expected as { question_id: option_id, ... }
+  window.takeExam.setAnswers = function (initialAnswers) {
     answers = Object.assign({}, answers, initialAnswers);
     saveAnswersToStorage();
-    // refresh UI
     renderQuestions(currentPage);
     updatePaletteCounts();
   };
-
 });
 </script>
+
 {% endblock %}

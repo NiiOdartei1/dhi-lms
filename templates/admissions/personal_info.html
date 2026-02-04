@@ -61,20 +61,20 @@
 
                     <!-- Surname -->
                     <div class="col-md-4">
-                        <label class="form-label fw-bold">Surname</label>
-                        {{ form.surname(class="form-control", placeholder="Surname") }}
-                        {% for error in form.surname.errors %}
-                            <div class="text-danger small">{{ error }}</div>
-                        {% endfor %}
+                        <label class="form-label fw-bold">Last Name (Surname)</label>
+                        {{ form.surname(class="form-control") }}
+                    </div>
+
+                    <!-- First Name -->
+                    <div class="col-md-4">
+                        <label class="form-label fw-bold">First Name</label>
+                        {{ form.first_name(class="form-control") }}
                     </div>
 
                     <!-- Other Names -->
-                    <div class="col-md-5">
+                    <div class="col-md-4">
                         <label class="form-label fw-bold">Other / Middle Names</label>
-                        {{ form.other_names(class="form-control", placeholder="Other names") }}
-                        {% for error in form.other_names.errors %}
-                            <div class="text-danger small">{{ error }}</div>
-                        {% endfor %}
+                        {{ form.other_names(class="form-control") }}
                     </div>
 
                     <!-- Gender -->

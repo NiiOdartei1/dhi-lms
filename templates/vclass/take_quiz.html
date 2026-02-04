@@ -43,7 +43,6 @@
 
   <div class="row">
     <div class="col-lg-9">
-      <!-- keep one server-rendered csrf_token hidden so non-JS fallbacks work -->
       <form id="quiz-form" method="POST" action="{{ url_for('vclass.submit_quiz', quiz_id=quiz_json.id) }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div id="questions-container" class="mb-4" aria-live="polite"></div>
@@ -91,24 +90,13 @@
     quiz = JSON.parse(document.getElementById('quiz-data').textContent || '{}');
   } catch (err) {
     console.error('Invalid quiz JSON', err);
-    // If quiz data isn't present we stop early to avoid runtime errors
     return;
   }
 
-  // -----------------------
-  // Config / state
-  // -----------------------
-  const quizId = quiz && quiz.id;
-  const duration = ((quiz && quiz.duration_minutes) || 0) * 60; // seconds
-  const perPage = 5;
-  const questions = Array.isArray(quiz.questions) ? quiz.questions : [];
-  const totalQuestions = questions.length; // ✅ this is per quiz
-  const totalPages = Math.max(1, Math.ceil(totalQuestions / perPage));
-  let currentPage = 1;
-  const answers = {}; // keyed by question id -> string | number | array
-  const LS_KEY = `vclass_quiz_answers_${quizId}`;
-  if (summaryTotal) summaryTotal.textContent = totalQuestions;
-  if (summaryUnanswered) summaryUnanswered.textContent = totalQuestions - answeredCount;
+  if (!quiz || !quiz.id) {
+    console.error('No quiz data found');
+    return;
+  }
 
   // -----------------------
   // DOM references
@@ -120,14 +108,27 @@
   const progressText = document.getElementById('progress-text');
   const summaryAnswered = document.getElementById('summary-answered');
   const summaryUnanswered = document.getElementById('summary-unanswered');
+  const summaryTotal = document.getElementById('summary-total');
   const paletteEl = document.getElementById('question-palette');
   const form = document.getElementById('quiz-form');
 
-  // Fail fast if essential DOM missing
   if (!form || !questionsContainer || !paginationEl || !paletteEl) {
-    console.warn('Quiz: essential DOM elements missing - aborting UI init.');
+    console.error('Quiz: essential DOM elements missing');
     return;
   }
+
+  // -----------------------
+  // Config / state
+  // -----------------------
+  const quizId = quiz.id;
+  const duration = (quiz.duration_minutes || 0) * 60; // seconds
+  const perPage = 5;
+  const questions = Array.isArray(quiz.questions) ? quiz.questions : [];
+  const totalQuestions = questions.length;
+  const totalPages = Math.max(1, Math.ceil(totalQuestions / perPage));
+  let currentPage = 1;
+  const answers = {};
+  const LS_KEY = `vclass_quiz_answers_${quizId}`;
 
   // -----------------------
   // CSRF helpers
@@ -144,25 +145,18 @@
     opts = Object.assign({}, opts);
     opts.headers = Object.assign({}, opts.headers || {});
 
-    // set JSON content-type for non-FormData bodies
     if (opts.body && !(opts.body instanceof FormData) && !opts.headers['Content-Type']) {
       opts.headers['Content-Type'] = 'application/json';
     }
 
     const token = getCsrfToken();
     if (token) {
-      // include common CSRF header names that Flask-WTF recognizes
       opts.headers['X-CSRFToken'] = token;
       opts.headers['X-CSRF-Token'] = token;
     }
 
     opts.credentials = opts.credentials || 'include';
-    try {
-      return await fetch(url, opts);
-    } catch (err) {
-      // bubble up to callers who handle network errors
-      throw err;
-    }
+    return fetch(url, opts);
   }
 
   // -----------------------
@@ -186,7 +180,6 @@
       if (Array.isArray(value)) {
         payload.answer_text = JSON.stringify(value);
       } else if (typeof value === 'number' || (!isNaN(value) && String(value).trim() !== '')) {
-        // store numeric option id when possible
         payload.selected_option_id = (typeof value === 'number') ? value : (isNaN(Number(value)) ? null : Number(value));
         if (payload.selected_option_id === null) payload.answer_text = String(value);
       } else {
@@ -198,7 +191,7 @@
         body: JSON.stringify(payload)
       });
     } catch (err) {
-      console.warn('Autosave failed (network):', err);
+      console.warn('Autosave failed:', err);
     }
   }, 300);
 
@@ -208,9 +201,7 @@
   function persistLocal() {
     try {
       localStorage.setItem(LS_KEY, JSON.stringify(answers));
-    } catch (e) {
-      // ignore localStorage errors silently (e.g. quota)
-    }
+    } catch (e) {}
   }
 
   function saveAnswer(qid, val) {
@@ -225,56 +216,54 @@
   // Initialization flow
   // -----------------------
   (async function initFlow() {
-    // 1) Has user already submitted? If yes redirect to dashboard.
-    try {
-      const submittedRes = await csrfFetch('{{ url_for("vclass.has_submitted", quiz_id=quiz_json.id) }}', { method: 'GET' });
-      if (submittedRes.ok) {
-        const j = await submittedRes.json();
-        if (j && j.submitted) {
-          window.location.href = "{{ url_for('vclass.dashboard') }}";
-          return;
-        }
-      }
-    } catch (e) {
-      console.warn('has-submitted check failed', e);
-    }
-
-    // 2) Restore saved answers (server first, fallback to localStorage)
+    // ✅ IMPORTANT: For fresh quiz start, START WITH BLANK FORM (no restored answers)
+    // Only restore if user explicitly confirms they want previous session's answers
+    
+    // Check for server-saved answers from a previous attempt
     try {
       const res = await csrfFetch('{{ url_for("vclass.get_saved_answers", quiz_id=quiz_json.id) }}', { method: 'GET' });
       if (res.ok) {
         const serverAnswers = await res.json();
-        if (serverAnswers && Object.keys(serverAnswers).length) {
-          Object.assign(answers, serverAnswers);
+        if (serverAnswers && Object.keys(serverAnswers).length > 0) {
+          // Server has saved answers from a previous session
+          const restore = confirm('Saved answers from a previous session were found. Restore them now? Click Cancel to start fresh.');
+          if (restore) {
+            // Restore server-saved answers
+            Object.keys(serverAnswers).forEach(k => {
+              try { answers[Number(k)] = serverAnswers[k]; } catch (e) { answers[k] = serverAnswers[k]; }
+            });
+          } else {
+            // User chose to start fresh — clear localStorage to prevent old cached answers
+            localStorage.removeItem(LS_KEY);
+          }
         } else {
-          const ls = localStorage.getItem(LS_KEY);
-          if (ls) Object.assign(answers, JSON.parse(ls) || {});
+          // No server-saved answers — start fresh and clear any old localStorage data
+          localStorage.removeItem(LS_KEY);
         }
       } else {
-        const ls = localStorage.getItem(LS_KEY);
-        if (ls) Object.assign(answers, JSON.parse(ls) || {});
+        // Failed to fetch — clear localStorage to ensure blank start
+        localStorage.removeItem(LS_KEY);
       }
     } catch (e) {
       console.warn('Failed to fetch saved answers', e);
-      const ls = localStorage.getItem(LS_KEY);
-      if (ls) Object.assign(answers, JSON.parse(ls) || {});
+      // On error, clear localStorage to ensure blank start
+      localStorage.removeItem(LS_KEY);
     }
 
-    // 3) Get or create start time
-    // Server may have injected a session-provided start time (first 19 chars to avoid timezone mess)
+    // Get server start time
     const serverStartStr = "{{ session.get('quiz_' ~ quiz_json.id ~ '_start_time','')[:19] }}";
     let serverStartTime = null;
     try {
       if (serverStartStr && serverStartStr.trim() !== '') {
-        serverStartTime = new Date(serverStartStr + 'Z'); // append Z to treat as UTC
+        serverStartTime = new Date(serverStartStr + 'Z');
         if (isNaN(serverStartTime.getTime())) serverStartTime = null;
       }
     } catch (e) {
       serverStartTime = null;
     }
 
+    // If no server start time, create one
     if (!serverStartTime) {
-      // Ask server to start timer (server will set session and we reload to get consistent template values)
       try {
         const startRes = await csrfFetch('{{ url_for("vclass.start_quiz_timer", quiz_id=quiz_json.id) }}', {
           method: 'POST',
@@ -282,8 +271,6 @@
         });
         if (startRes.ok) {
           return window.location.reload();
-        } else {
-          console.warn('start_quiz_timer returned non-ok; continuing without server-start reload');
         }
       } catch (e) {
         console.warn('Failed to start timer', e);
@@ -294,26 +281,18 @@
   })();
 
   // -----------------------
-  // UI init and renderers
+  // UI initialization
   // -----------------------
   function initUI(serverStartTime) {
+    console.log('Initializing UI with', totalQuestions, 'questions');
     renderPalette();
     renderQuestions(currentPage);
     renderPagination();
     updateProgress();
 
-    // If server provided start time, start countdown
     if (serverStartTime instanceof Date && !isNaN(serverStartTime.getTime())) {
+      console.log('Starting countdown from', serverStartTime);
       startCountdown(serverStartTime);
-    } else {
-      // fallback: check again for embedded session start string (rare)
-      try {
-        const altStartStr = "{{ session.get('quiz_' ~ quiz_json.id ~ '_start_time','')[:19] }}";
-        if (altStartStr && altStartStr.trim() !== '') {
-          const alt = new Date(altStartStr + 'Z');
-          if (!isNaN(alt.getTime())) startCountdown(alt);
-        }
-      } catch (e) { /* ignore */ }
     }
   }
 
@@ -335,7 +314,6 @@
       btn.addEventListener('click', () => {
         const page = Math.floor(i / perPage) + 1;
         renderQuestions(page);
-        // focus first input on new page
         setTimeout(() => {
           const first = questionsContainer.querySelector('input, textarea');
           if (first) first.focus();
@@ -370,145 +348,131 @@
 
     if (summaryAnswered) summaryAnswered.textContent = String(answeredCount);
     if (summaryUnanswered) summaryUnanswered.textContent = String(Math.max(0, totalQuestions - answeredCount));
-    const progressBar = document.getElementById('progress-bar');
-    if (progressBar) progressBar.setAttribute('aria-valuenow', String(answeredCount));
   }
 
   // -----------------------
   // Render questions for a page
   // -----------------------
   function renderQuestions(page) {
-  currentPage = Math.min(Math.max(1, page), totalPages);
-  questionsContainer.innerHTML = '';
+    currentPage = Math.min(Math.max(1, page), totalPages);
+    questionsContainer.innerHTML = '';
 
-  const start = (currentPage - 1) * perPage;
-  const end = Math.min(start + perPage, totalQuestions);
+    const start = (currentPage - 1) * perPage;
+    const end = Math.min(start + perPage, totalQuestions);
 
-  for (let i = start; i < end; i++) {
-    const q = questions[i];
-    if (!q) continue;
-    const block = document.createElement('div');
-    block.className = 'mb-3 p-3 border rounded';
+    console.log('Rendering questions', start, 'to', end);
 
-    // Question header
-    const header = document.createElement('div');
-    header.className = 'mb-2';
-    header.innerHTML = `<strong>Question ${i + 1}:</strong>`;
-    block.appendChild(header);
-
-    // Question text
-    if (q.question_text) {
-      const qText = document.createElement('div');
-      qText.className = 'mb-2';
-      qText.innerHTML = q.question_text;
-      block.appendChild(qText);
-    }
-
-    const qType = (q.question_type || '').toLowerCase();
-
-    // ------------------------
-    // Multiple Choice (single)
-    // ------------------------
-    if ((qType === 'mcq' || qType === 'multiple_choice' || qType === 'multiple-choice') && Array.isArray(q.options)) {
-      q.options.forEach(opt => {
-        const wrap = document.createElement('div');
-        wrap.className = 'form-check';
-
-        const radio = document.createElement('input');
-        radio.type = 'radio';
-        radio.name = `answers[${q.id}]`;
-        radio.id = `q${q.id}_o${opt.id}`;
-        radio.value = opt.id;
-        radio.className = 'form-check-input';
-        radio.setAttribute('data-qid', q.id);
-
-        // NEVER prefill for new attempt
-        radio.checked = false;
-
-        radio.addEventListener('change', () => {
-          const parsed = (typeof opt.id === 'number' || (!isNaN(opt.id) && String(opt.id).trim() !== '')) 
-                         ? (isNaN(opt.id) ? opt.id : parseInt(opt.id, 10)) 
-                         : opt.id;
-          saveAnswer(q.id, parsed);
-        });
-
-        const label = document.createElement('label');
-        label.htmlFor = radio.id;
-        label.className = 'form-check-label';
-        label.innerHTML = opt.text || '';
-
-        wrap.appendChild(radio);
-        wrap.appendChild(label);
-        block.appendChild(wrap);
-      });
-    }
-
-    // ------------------------
-    // Fill-in-the-blank / multi-blank
-    // ------------------------
-    else if (['fill_blank', 'multi_blank', 'fill_in', 'fill-in', 'fill_in_blank', 'multi-blank'].includes(qType)) {
-      const wrapper = document.createElement('div');
-      wrapper.className = 'mb-3';
-
-      const numBlanks = (String(q.question_text || '').match(/_{3,}|_____/g) || []).length || 1;
-
-      for (let idx = 0; idx < numBlanks; idx++) {
-        const input = document.createElement('input');
-        input.type = 'text';
-        input.className = 'form-control my-2';
-        input.name = `answers[${q.id}][]`;
-        input.setAttribute('data-qid', q.id);
-        input.setAttribute('data-idx', idx);
-        input.placeholder = `Answer for blank ${idx + 1}`;
-        input.value = ''; // always empty
-
-        input.addEventListener('input', (e) => {
-          const i = parseInt(e.target.getAttribute('data-idx'), 10);
-          if (!Array.isArray(answers[q.id])) answers[q.id] = [];
-          answers[q.id][i] = e.target.value;
-          saveAnswer(q.id, answers[q.id]);
-        });
-
-        wrapper.appendChild(input);
+    for (let i = start; i < end; i++) {
+      const q = questions[i];
+      if (!q) {
+        console.warn('Question at index', i, 'is missing');
+        continue;
       }
 
-      block.appendChild(wrapper);
+      const block = document.createElement('div');
+      block.className = 'mb-3 p-3 border rounded';
+
+      const header = document.createElement('div');
+      header.className = 'mb-2';
+      header.innerHTML = `<strong>Question ${i + 1}:</strong>`;
+      block.appendChild(header);
+
+      if (q.question_text) {
+        const qText = document.createElement('div');
+        qText.className = 'mb-2';
+        qText.textContent = q.question_text;
+        block.appendChild(qText);
+      }
+
+      const qType = (q.question_type || '').toLowerCase();
+      console.log('Question', q.id, 'type:', qType, 'options:', q.options?.length || 0);
+
+      // Multiple Choice
+      if ((qType === 'mcq' || qType === 'multiple_choice') && Array.isArray(q.options) && q.options.length > 0) {
+        q.options.forEach(opt => {
+          const wrap = document.createElement('div');
+          wrap.className = 'form-check';
+
+          const radio = document.createElement('input');
+          radio.type = 'radio';
+          radio.name = `answers[${q.id}]`;
+          radio.id = `q${q.id}_o${opt.id}`;
+          radio.value = opt.id;
+          radio.className = 'form-check-input';
+          radio.checked = String(answers[q.id]) === String(opt.id);
+
+          radio.addEventListener('change', () => {
+            const parsed = parseInt(opt.id, 10) || opt.id;
+            saveAnswer(q.id, parsed);
+          });
+
+          const label = document.createElement('label');
+          label.htmlFor = radio.id;
+          label.className = 'form-check-label';
+          label.textContent = opt.text || '';
+
+          wrap.appendChild(radio);
+          wrap.appendChild(label);
+          block.appendChild(wrap);
+        });
+      }
+      // Fill-in-the-blank
+      else if (['fill_blank', 'multi_blank', 'fill_in', 'fill-in', 'fill_in_blank', 'multi-blank'].includes(qType)) {
+        const wrapper = document.createElement('div');
+        wrapper.className = 'mb-3';
+
+        const numBlanks = (String(q.question_text || '').match(/_{3,}|_____/g) || []).length || 1;
+
+        for (let idx = 0; idx < numBlanks; idx++) {
+          const input = document.createElement('input');
+          input.type = 'text';
+          input.className = 'form-control my-2';
+          input.name = `answers[${q.id}][]`;
+          input.placeholder = `Answer for blank ${idx + 1}`;
+          input.value = '';
+
+          input.addEventListener('input', (e) => {
+            const i = parseInt(e.target.getAttribute('data-idx'), 10);
+            if (!Array.isArray(answers[q.id])) answers[q.id] = [];
+            answers[q.id][i] = e.target.value;
+            saveAnswer(q.id, answers[q.id]);
+          });
+
+          input.setAttribute('data-idx', idx);
+          wrapper.appendChild(input);
+        }
+
+        block.appendChild(wrapper);
+      }
+      // Short Answer
+      else if (qType === 'manual' || qType === 'short_answer' || qType === 'text') {
+        const ta = document.createElement('textarea');
+        ta.className = 'form-control';
+        ta.name = `answers[${q.id}]`;
+        ta.rows = 2;
+        ta.placeholder = 'Type your answer here...';
+        ta.value = answers[q.id] || '';
+
+        ta.addEventListener('input', (e) => {
+          saveAnswer(q.id, e.target.value);
+        });
+
+        block.appendChild(ta);
+      }
+      // Unsupported
+      else {
+        const unsupported = document.createElement('div');
+        unsupported.className = 'text-muted';
+        unsupported.textContent = `Unsupported question type: ${qType}`;
+        block.appendChild(unsupported);
+      }
+
+      questionsContainer.appendChild(block);
     }
 
-    // ------------------------
-    // Short / manual answer
-    // ------------------------
-    else if (qType === 'manual' || qType === 'short_answer' || qType === 'text') {
-      const ta = document.createElement('textarea');
-      ta.className = 'form-control';
-      ta.name = `answers[${q.id}]`;
-      ta.rows = (q.expected_length && q.expected_length > 100) ? 4 : 2;
-      ta.placeholder = 'Type your answer here...';
-      ta.value = ''; // always empty
-
-      ta.addEventListener('input', (e) => {
-        saveAnswer(q.id, e.target.value);
-      });
-
-      block.appendChild(ta);
-    }
-
-    // ------------------------
-    // Unsupported type fallback
-    // ------------------------
-    else {
-      const unsupported = document.createElement('div');
-      unsupported.className = 'text-muted';
-      unsupported.textContent = 'Unsupported question type.';
-      block.appendChild(unsupported);
-    }
-
-    questionsContainer.appendChild(block);
+    renderPagination();
+    updatePalette();
   }
-
-  renderPagination();
-  updatePalette();
-}
 
   // -----------------------
   // Pagination
@@ -519,9 +483,6 @@
     function makeLi(pageNum, text, disabled = false, active = false) {
       const li = document.createElement('li');
       li.className = 'page-item' + (disabled ? ' disabled' : '') + (active ? ' active' : '');
-      const pageStartIdx = (pageNum - 1) * perPage;
-      const q = questions[pageStartIdx];
-      if (q && answers[q.id] !== undefined && answers[q.id] !== null) li.classList.add('bg-success', 'text-white');
 
       const a = document.createElement('a');
       a.className = 'page-link';
@@ -536,7 +497,9 @@
     }
 
     paginationEl.appendChild(makeLi(currentPage - 1, '« Prev', currentPage === 1));
-    for (let p = 1; p <= totalPages; p++) paginationEl.appendChild(makeLi(p, null, false, p === currentPage));
+    for (let p = 1; p <= totalPages; p++) {
+      paginationEl.appendChild(makeLi(p, null, false, p === currentPage));
+    }
     paginationEl.appendChild(makeLi(currentPage + 1, 'Next »', currentPage === totalPages));
   }
 
@@ -552,29 +515,20 @@
       return String(v).trim() !== '';
     }).length;
 
-    const totalQuestions = quizQuestionIds.length;
     const percent = totalQuestions ? Math.round((answeredCount / totalQuestions) * 100) : 0;
 
     if (progressInner) progressInner.style.width = percent + '%';
     if (progressText) progressText.textContent = `${answeredCount}/${totalQuestions} (${percent}%)`;
-
-    const progressBar = document.getElementById('progress-bar');
-    if (progressBar) progressBar.setAttribute('aria-valuenow', String(answeredCount));
-
     if (summaryAnswered) summaryAnswered.textContent = String(answeredCount);
     if (summaryUnanswered) summaryUnanswered.textContent = String(Math.max(0, totalQuestions - answeredCount));
   }
 
   // -----------------------
-  // Form helpers & CSRF preservation
+  // Form submission
   // -----------------------
-  function removeAutogenInputs() {
+  form.addEventListener('submit', (e) => {
+    // Inject answers
     document.querySelectorAll('input[data-autogen="true"]').forEach(n => n.remove());
-  }
-
-  function injectAnswersIntoForm() {
-    removeAutogenInputs();
-
     Object.entries(answers).forEach(([qid, val]) => {
       if (Array.isArray(val)) {
         val.forEach(v => {
@@ -594,46 +548,6 @@
         form.appendChild(hidden);
       }
     });
-  }
-
-  function ensureCsrfInput() {
-    const metaToken = getCsrfToken();
-    // prefer server-rendered hidden input if present; otherwise create one
-    let existing = form.querySelector('input[name="csrf_token"]');
-    if (existing) {
-      if (metaToken && existing.value !== metaToken) existing.value = metaToken;
-    } else {
-      const csrf = document.createElement('input');
-      csrf.type = 'hidden';
-      csrf.name = 'csrf_token';
-      csrf.value = metaToken || '';
-      // mark as not autogen so removeAutogenInputs won't remove it
-      form.appendChild(csrf);
-    }
-  }
-
-  function disableInteractiveControlsExceptHidden() {
-    const all = form.querySelectorAll('input, textarea, button, select');
-    all.forEach(el => {
-      const tag = el.tagName.toLowerCase();
-      if (tag === 'input') {
-        const t = (el.getAttribute('type') || '').toLowerCase();
-        if (t === 'hidden') return; // keep hidden inputs enabled
-      }
-      if (tag === 'textarea') {
-        try { el.readOnly = true; } catch (e) {}
-        return;
-      }
-      try { el.disabled = true; } catch (e) {}
-    });
-  }
-
-  // -----------------------
-  // Form submit
-  // -----------------------
-  form.addEventListener('submit', (e) => {
-    injectAnswersIntoForm();
-    ensureCsrfInput();
 
     const unanswered = totalQuestions - Object.keys(answers).filter(k => {
       const v = answers[k];
@@ -646,7 +560,6 @@
         return;
       }
     }
-    // otherwise allow normal form submission (server expects form-encoded POST + CSRF token)
   });
 
   // -----------------------
@@ -654,66 +567,38 @@
   // -----------------------
   function startCountdown(startTime) {
     if (!(startTime instanceof Date) || isNaN(startTime.getTime())) {
-      console.error('Invalid startTime provided to startCountdown', startTime);
+      console.error('Invalid startTime', startTime);
       return;
     }
 
-    let ticking = true;
-
     (function tick() {
-      if (!ticking) return;
       const now = new Date();
       const elapsed = Math.floor((now - startTime) / 1000);
       const left = duration - elapsed;
 
       if (left <= 0) {
         if (timerEl) timerEl.textContent = '00:00';
-        try {
-          injectAnswersIntoForm();
-          ensureCsrfInput();
-          disableInteractiveControlsExceptHidden();
-
-          setTimeout(() => {
-            const csrfVal = getCsrfToken();
-            if (!csrfVal) {
-              console.error('CSRF token missing at auto-submit time; aborting auto-submit');
-              alert('Unable to auto-submit: CSRF token is missing. Please manually submit your quiz.');
-              return;
-            }
-            form.submit();
-          }, 250);
-        } catch (err) {
-          console.error('Auto-submit failed:', err);
-          alert('Auto-submit failed. Please manually submit your quiz.');
-        }
-        ticking = false;
+        form.submit();
         return;
       }
 
-      if (timerEl) timerEl.textContent = formatTime(left);
+      if (timerEl) {
+        const h = Math.floor(left / 3600);
+        const m = Math.floor((left % 3600) / 60);
+        const s = left % 60;
+        if (h > 0) {
+          timerEl.textContent = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+        } else {
+          timerEl.textContent = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+        }
+      }
       setTimeout(tick, 1000);
     })();
   }
 
-  function formatTime(sec) {
-    const h = Math.floor(sec / 3600);
-    const m = Math.floor((sec % 3600) / 60);
-    const s = sec % 60;
-    if (h > 0) return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-  }
-
-  // -----------------------
-  // Expose debug helpers (optional)
-  // -----------------------
-  window.vclass_quiz = {
-    answers,
-    saveAnswer,
-    injectAnswersIntoForm,
-    ensureCsrfInput,
-    persistLocal
-  };
-
+  // Debug
+  window.vclass_quiz = { answers, questions, totalQuestions };
+  console.log('Quiz script loaded. Total questions:', totalQuestions);
 })();
 </script>
 
@@ -745,6 +630,5 @@
 #question-palette .palette-btn:focus,
 #question-palette .palette-btn:hover { outline: none; filter: brightness(0.96); }
 .progress-bar { transition: width .4s ease; }
-.blank-input { min-width: 140px; }
 </style>
 {% endblock %}

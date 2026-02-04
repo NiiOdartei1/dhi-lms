@@ -1,43 +1,22 @@
-{#--------------------------------------------#}
-{# One timetable template for both students and parents #}
-{#--------------------------------------------#}
-
-{% if is_parent %}
-  {% extends 'parent/base_parent.html' %}
-{% else %}
-  {% extends 'student/base_student.html' %}
-{% endif %}
+{% extends 'student/base_student.html' %}
 
 {% block title %}
-  {% if is_parent %}
-    {{ selected_child_name }}'s Timetable
-  {% else %}
-    My Timetable
-  {% endif %}
+  My Timetable
 {% endblock %}
 
 {% block content %}
 <div class="container mt-4">
-  <h4 class="mb-3">
-    🗓️ 
-    {% if is_parent %}
-      {{ selected_child_name }} — {{ student_class }}
-    {% else %}
-      My Timetable — {{ student_class }}
-    {% endif %}
-  </h4>
+  <h4 class="mb-3">🗓️ My Timetable — {{ student_class }}</h4>
 
-  {% if not is_parent %}
   <div class="d-flex justify-content-end mb-3">
     <a href="{{ url_for('student.download_timetable') }}" class="btn btn-primary">
       📥 Download Timetable (PDF)
     </a>
   </div>
-  {% endif %}
 
   {% if not day_blocks %}
     <div class="alert alert-info">
-      {% if is_parent %}No timetable available for this student.{% else %}No timetable available.{% endif %}
+      No timetable available.
     </div>
   {% else %}
 

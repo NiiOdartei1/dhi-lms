@@ -1,15 +1,11 @@
 # utils/notifications.py
 from datetime import datetime
 import json
-from models import SchoolClass, db, Notification, NotificationRecipient, User, StudentProfile
+from models import db, Notification, NotificationRecipient, User, StudentProfile
 from flask_login import current_user
 
 def create_assignment_notification(assignment):
-    """
-    Create a notification for a new assignment and send to all students in the assigned class.
-    The notification message includes date + time.
-    """
-    # format due date with time
+    """Create notification for new assignment (tertiary: by programme/level)"""
     due_str = assignment.due_date.strftime('%d %B %Y, %I:%M %p') if assignment.due_date else 'No due date'
 
     notice = Notification(
@@ -23,16 +19,16 @@ def create_assignment_notification(assignment):
         created_at=datetime.utcnow(),
         related_type='assignment',
         related_id=assignment.id,
-        # store sender as current_user.user_id when available (user or teacher)
         sender_id=getattr(current_user, 'user_id', None) or getattr(current_user, 'admin_id', None)
     )
 
     db.session.add(notice)
-    db.session.flush()  # get notice.id
+    db.session.flush()
 
-    # Find all students in the assigned class (use student.user_id)
+    # TERTIARY: Find all students in the programme/level
     students = User.query.join(StudentProfile).filter(
-        StudentProfile.current_class == assignment.assigned_class
+        StudentProfile.current_programme == assignment.programme_name,
+        StudentProfile.programme_level == int(assignment.programme_level)
     ).all()
 
     recipients = [
@@ -46,26 +42,26 @@ def create_assignment_notification(assignment):
     return notice
 
 def create_fee_notification(fee_group, sender=None):
+    """Create notification for new fee assignment (tertiary: by programme/level)"""
     if sender is None:
         sender = current_user
 
     sender_id = getattr(sender, 'user_id', None) or getattr(sender, 'admin_id', None)
     sender_type = 'admin' if getattr(sender, 'is_admin', False) else 'user'
 
-    # Create message
+    # Build message text
     try:
         items = json.loads(fee_group.items) if isinstance(fee_group.items, str) else fee_group.items
     except Exception:
         items = []
 
-    items_text = "\n".join([f"• {i.get('description', '')}: {i.get('amount',0)} GHS" for i in items])
+    items_text = "\n".join([f"• {i.get('description', '')}: {i.get('amount', 0)} GHS" for i in items])
     message = (
-        f"New fee assigned for {fee_group.class_level}\n"
+        f"New fee assigned for {fee_group.programme_name} - Level {fee_group.programme_level}\n"
         f"Year: {fee_group.academic_year}, Semester: {fee_group.semester}\n"
         f"Total: {fee_group.amount} GHS\n\nBreakdown:\n{items_text}"
     )
 
-    # Notification
     notification = Notification(
         type='fee',
         title=f"Fee Assigned: {fee_group.description}",
@@ -77,44 +73,29 @@ def create_fee_notification(fee_group, sender=None):
         created_at=datetime.utcnow()
     )
     db.session.add(notification)
-    db.session.flush()  # get notification.id
+    db.session.flush()
 
-    # Get all students in the class
-    school_class = SchoolClass.query.filter_by(name=fee_group.class_level).first()
-    if not school_class:
-        school_class = SchoolClass.query.filter(SchoolClass.name.ilike(f"%{fee_group.class_level}%")).first()
-    if not school_class:
+    # TERTIARY: Get all students in the programme/level
+    students = User.query.join(StudentProfile).filter(
+        StudentProfile.current_programme == fee_group.programme_name,
+        StudentProfile.programme_level == int(fee_group.programme_level)
+    ).all()
+
+    if not students:
         db.session.rollback()
-        raise ValueError(f"No class found for '{fee_group.class_level}'")
+        raise ValueError("No student recipients found!")
 
-    students = User.query.filter_by(class_id=school_class.id, role='student').all()
-
-    recipient_user_ids = set()
-    for student in students:
-        recipient_user_ids.add(student.user_id)
-        # Add parents if available via StudentProfile
-        sp = getattr(student, 'student_profile', None)
-        if sp and hasattr(sp, 'parents'):
-            parents = sp.parents.all() if hasattr(sp.parents, 'all') else sp.parents
-            for p in parents:
-                if hasattr(p, 'user_id'):
-                    recipient_user_ids.add(p.user_id)
-
-    if not recipient_user_ids:
-        db.session.rollback()
-        raise ValueError("No recipients found!")
-
-    # Create NotificationRecipient
-    recipients = [NotificationRecipient(notification_id=notification.id, user_id=uid, is_read=False) for uid in recipient_user_ids]
+    recipients = [
+        NotificationRecipient(notification_id=notification.id, user_id=student.user_id, is_read=False)
+        for student in students
+    ]
     db.session.add_all(recipients)
     db.session.commit()
 
     return notification
 
 def create_missed_call_notification(caller_name, target_user_id, conversation_id):
-    """
-    Create a notification for a missed call when the target user is not online.
-    """
+    """Create notification for missed call"""
     notice = Notification(
         type='call',
         title="Missed Call",
@@ -126,9 +107,8 @@ def create_missed_call_notification(caller_name, target_user_id, conversation_id
     )
 
     db.session.add(notice)
-    db.session.flush()  # get notice.id
+    db.session.flush()
 
-    # Send to the target user
     recipient = NotificationRecipient(notification_id=notice.id, user_id=target_user_id)
     db.session.add(recipient)
 

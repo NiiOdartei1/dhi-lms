@@ -1,8 +1,10 @@
 from datetime import datetime
 from functools import wraps
+import json
 import os, random, string
 from flask import (Blueprint, current_app, render_template, redirect, request, url_for, flash, session, make_response)
 import pdfkit
+from models import ProgrammeFeeStructure
 from utils.email import send_email, send_application_completed_email, send_email_verification
 from utils.security import verify_email_code
 from flask_login import login_user
@@ -10,14 +12,14 @@ from flask_mail import Message
 from werkzeug.utils import secure_filename
 from PIL import Image
 from utils.extensions import db
-from .models import AdmissionVoucher, Applicant, Application, ApplicationResult
+from .models import AdmissionVoucher, Applicant, Application, ApplicationDocument, ApplicationPayment, ApplicationResult
 from .forms import (ApplicantRegistrationForm, ApplicantLoginForm, PersonalInfoForm, GuardianForm, ProgrammeChoiceForm, EducationForm, ExamInfoForm, ExamResultForm, PassportUploadForm, DeclarationForm, PurchaseVoucherForm, VoucherAuthenticationForm)
 from datetime import datetime, timedelta
 
 # =====================================================
 # Blueprint
 # =====================================================
-admissions_bp = Blueprint('admissions', __name__, template_folder='templates', static_folder='static', url_prefix='/admissions')
+admissions_bp = Blueprint('admissions', __name__, template_folder='templates', static_folder='static', static_url_path="/admissions/static", url_prefix='/admissions')
 
 PDFKIT_CONFIG = pdfkit.configuration(
     wkhtmltopdf=r"C:\Program Files\wkhtmltopdf\bin\wkhtmltopdf.exe"
@@ -376,7 +378,16 @@ Admissions Office
 @applicant_login_required
 def dashboard():
     applicant = Applicant.query.get(session['applicant_id'])
-    return render_template('admissions/dashboard.html', applicant=applicant)
+
+    # optional: fetch the most recent application explicitly (safer than relying on relationship)
+    application = None
+    if applicant:
+        application = getattr(applicant, 'application', None)
+        if not application:
+            # fallback: try to fetch by applicant id (if you store applicant_id on Application)
+            application = Application.query.filter_by(applicant_id=applicant.id).order_by(Application.created_at.desc()).first()
+
+    return render_template('admissions/dashboard.html', applicant=applicant, application=application)
 
 
 # =====================================================
@@ -421,6 +432,7 @@ def personal_info():
         # Save form data to database
         application.title = form.title.data
         application.surname = form.surname.data
+        application.first_name = form.first_name.data
         application.other_names = form.other_names.data
         application.gender = form.gender.data
         application.dob = form.dob.data
@@ -503,8 +515,8 @@ def programme():
         application.second_stream = form.second_stream.data
         application.third_choice = form.third_choice.data
         application.third_stream = form.third_stream.data
-        application.fourth_choice = form.fourth_choice.data
-        application.fourth_stream = form.fourth_stream.data
+        application.sponsor_name = form.sponsor_name.data
+        application.sponsor_relation = form.sponsor_relation.data
 
         db.session.commit()
         return redirect(url_for('admissions.education'))
@@ -516,8 +528,8 @@ def programme():
         form.second_stream.data = application.second_stream
         form.third_choice.data = application.third_choice
         form.third_stream.data = application.third_stream
-        form.fourth_choice.data = application.fourth_choice
-        form.fourth_stream.data = application.fourth_stream
+        form.sponsor_name.data = application.sponsor_name
+        form.sponsor_relation.data = application.sponsor_relation
 
     return render_template('admissions/programme.html', form=form)
 
@@ -543,9 +555,42 @@ def education():
 @applicant_login_required
 def exam_info():
     form = ExamInfoForm()
+    application = Application.query.filter_by(applicant_id=session['applicant_id']).first()
+
+    if not application:
+        # create an application shell if you expect one
+        application = Application(applicant_id=session['applicant_id'])
+        db.session.add(application)
+        db.session.commit()
 
     if form.validate_on_submit():
+        application.exam_type = form.exam_type.data
+        application.sitting = form.sitting.data
+
+        application.first_index = form.first_index.data.strip() or None
+        application.first_year = form.first_year.data.strip() or None
+
+        application.second_index = form.second_index.data.strip() or None
+        application.second_year = form.second_year.data.strip() or None
+
+        application.third_index = form.third_index.data.strip() or None
+        application.third_year = form.third_year.data.strip() or None
+
+        db.session.commit()
         return redirect(url_for('admissions.exam_results'))
+
+    # pre-fill form from application if present
+    form.exam_type.data = application.exam_type or ''
+    form.sitting.data = application.sitting or ''
+
+    form.first_index.data = application.first_index or ''
+    form.first_year.data = application.first_year or ''
+
+    form.second_index.data = application.second_index or ''
+    form.second_year.data = application.second_year or ''
+
+    form.third_index.data = application.third_index or ''
+    form.third_year.data = application.third_year or ''
 
     return render_template('admissions/exam_info.html', form=form)
 
@@ -606,8 +651,7 @@ def passport_upload():
     # Directory where uploaded images are stored
     upload_dir = os.path.join(
         current_app.root_path,
-        'admissions', 'static', 'uploads',
-        str(applicant_id)
+        'static', 'uploads', 'profile_pictures'
     )
     os.makedirs(upload_dir, exist_ok=True)
 
@@ -633,20 +677,51 @@ def passport_upload():
             sample_points = [(min(int(width*i/4), width-1), min(int(height*j/4), height-1))
                              for i in range(5) for j in range(5)]
 
-            def is_green_pixel(rgb):
+            def is_white_pixel(rgb):
                 r, g, b = rgb
-                h, s, v = colorsys.rgb_to_hsv(r/255, g/255, b/255)
-                return 0.23 <= h <= 0.42 and s >= 0.3 and v >= 0.3
 
-            green_count = sum(1 for px in sample_points if is_green_pixel(img.getpixel(px)))
-            if green_count / len(sample_points) >= 0.6:
-                final_path = os.path.join(upload_dir, filename)
+                # Convert to HSV
+                h, s, v = colorsys.rgb_to_hsv(r/255, g/255, b/255)
+
+                # Conditions for white/light background
+                return (
+                    s <= 0.25 and        # very low color intensity
+                    v >= 0.75 and        # bright
+                    abs(r - g) < 25 and  # RGB channels nearly equal
+                    abs(r - b) < 25 and
+                    abs(g - b) < 25
+                )
+
+            white_count = sum(1 for px in sample_points if is_white_pixel(img.getpixel(px)))
+
+            if white_count / len(sample_points) >= 0.6:
+                # Create unique filename
+                ext = filename.rsplit('.', 1)[1].lower()
+                new_filename = f"applicant_{applicant_id}.{ext}"
+                final_path = os.path.join(upload_dir, new_filename)
                 os.rename(temp_path, final_path)
-                session['uploaded_passport'] = filename
-                existing_passport = filename
+
+                # Save to ApplicationDocument table
+                application = Application.query.filter_by(applicant_id=applicant_id).first()
+
+                # Remove old passport photo record if exists
+                ApplicationDocument.query.filter_by(
+                    application_id=application.id,
+                    document_type='photo'
+                ).delete()
+
+                doc = ApplicationDocument(
+                    application_id=application.id,
+                    document_type='photo',
+                    file_path=f"uploads/profile_pictures/{new_filename}"
+                )
+                db.session.add(doc)
+                db.session.commit()
+
                 return redirect(url_for('admissions.preview'))
+
             else:
-                error = "Passport photo must have a green background."
+                error = "Passport photo must have a plain WHITE background."
                 os.remove(temp_path)
 
         except Exception as e:
@@ -770,6 +845,111 @@ def download_application_pdf():
     except Exception as e:
         flash(f"Failed to generate PDF: {str(e)}", "danger")
         return redirect(url_for('admissions.dashboard'))
+
+# =====================================================
+@admissions_bp.route('/application/pay-fees', methods=['GET', 'POST'])
+@applicant_login_required
+def application_pay_fees():
+    """
+    Applicant pays programme-based fees after approval.
+    Only full payment is allowed (no installments).
+    """
+    application = Application.query.filter_by(applicant_id=session['applicant_id']).first_or_404()
+
+    if application.status != 'approved':
+        flash("Your application must be approved before you can pay fees.", "warning")
+        return redirect(url_for('admissions.programme'))
+
+    # Ensure admin set admitted_programme/admitted_stream/year/semester
+    if not (application.admitted_programme and application.admitted_academic_year and application.admitted_semester and application.admitted_stream):
+        flash("No fee group assigned for your admission yet. Wait for admin to assign fees.", "info")
+        return redirect(url_for('admissions.dashboard'))
+
+    # Fetch fee group(s) for that programme + stream + year + semester
+    fee_groups = ProgrammeFeeStructure.query.filter_by(
+        programme_name=application.admitted_programme,
+        study_format=application.admitted_stream,
+        academic_year=application.admitted_academic_year,
+        semester=application.admitted_semester
+    ).all()
+
+    if not fee_groups:
+        flash("No fees configured by admin for your programme/stream/year/semester. Contact support.", "warning")
+        return redirect(url_for('admissions.dashboard'))
+
+    # Compute total due: sum of group.amount or items
+    total_fee = 0.0
+    items = []
+    for g in fee_groups:
+        # prefer items_list if set, otherwise use group.amount as single item
+        parsed = g.items_list or []
+        if parsed:
+            for it in parsed:
+                items.append(it)
+                total_fee += float(it.get('amount', 0))
+        else:
+            items.append({'description': g.description, 'amount': float(g.amount)})
+            total_fee += float(g.amount)
+
+    # Check existing approved payment for this application (prevent duplicate full payments)
+    existing_full = ApplicationPayment.query.filter_by(
+        applicant_id=application.applicant_id,
+        academic_year=application.admitted_academic_year,
+        semester=application.admitted_semester,
+        method=None  # optional filter
+    ).filter(ApplicationPayment.status == 'approved').first()
+
+    if request.method == 'POST':
+        # applicant must pay full amount
+        try:
+            amount = float(request.form.get('amount') or 0)
+        except:
+            flash("Invalid amount.", "danger")
+            return redirect(url_for('admissions.application_pay_fees'))
+
+        if abs(amount - total_fee) > 0.01:  # allow tiny float fuzz
+            flash(f"Full payment required. Amount must equal the total fee: GHS {total_fee:.2f}", "danger")
+            return redirect(url_for('admissions.application_pay_fees'))
+
+        method = request.form.get('method') or 'unknown'
+        proof = request.files.get('proof')
+        filename = None
+        if proof and proof.filename:
+            filename = secure_filename(proof.filename)
+            upload_dir = os.path.join(current_app.root_path, 'admissions', 'static', 'payments', str(application.applicant_id))
+            os.makedirs(upload_dir, exist_ok=True)
+            proof_path = os.path.join(upload_dir, filename)
+            proof.save(proof_path)
+
+        # Record payment (use ApplicationPayment model)
+        payment = ApplicationPayment(
+            applicant_id=application.applicant_id,
+            amount=amount,
+            method=method,
+            status='pending',   # admin approves later
+            created_at=datetime.utcnow(),
+        )
+        # attach metadata: academic year / semester (optional columns; add if needed)
+        payment.meta = json.dumps({
+            'programme': application.admitted_programme,
+            'study_format': application.admitted_stream,
+            'academic_year': application.admitted_academic_year,
+            'semester': application.admitted_semester,
+            'proof_filename': filename
+        }) if hasattr(payment, 'meta') else None
+
+        db.session.add(payment)
+        db.session.commit()
+
+        flash("Full payment submitted. Awaiting admin verification/approval.", "info")
+        return redirect(url_for('admissions.application_pay_fees'))
+
+    return render_template(
+        'admissions/pay_application_fees.html',
+        application=application,
+        items=items,
+        total_fee=total_fee
+    )
 
 
 # =====================================================

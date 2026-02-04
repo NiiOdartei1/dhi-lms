@@ -1,15 +1,26 @@
 from flask import Blueprint, current_app, render_template, abort, redirect, url_for, flash, jsonify, session, send_from_directory, send_file
 from flask import request
 from flask_login import login_required, current_user, login_user
-from models import db, User, Quiz, StudentQuizSubmission, Question, StudentProfile, QuizAttempt, Assignment, CourseMaterial, StudentCourseRegistration, Course,  TimetableEntry, AcademicCalendar, AcademicYear, AppointmentSlot, AppointmentBooking, StudentFeeBalance, ClassFeeStructure, StudentFeeTransaction, Exam, ExamSubmission, ExamQuestion, ExamAttempt, ExamSet, ExamSetQuestion, Notification, NotificationRecipient
+from models import db, User, Quiz, StudentQuizSubmission, Question, StudentProfile, Assignment, CourseMaterial, StudentCourseRegistration, Course,  TimetableEntry, AcademicCalendar, AcademicYear, AppointmentSlot, AppointmentBooking, StudentFeeBalance, ProgrammeFeeStructure, StudentFeeTransaction, Exam, ExamSubmission, ExamQuestion, ExamAttempt, ExamSet, ExamSetQuestion, Notification, NotificationRecipient
 from datetime import date, datetime, timedelta, time
 from sqlalchemy.orm import joinedload
-from forms import ExamLoginForm   # adjust path depending on your project structure
+from forms import ExamLoginForm
+import logging
 
+# Logger FIRST
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+if not logger.hasHandlers():
+    ch = logging.StreamHandler()
+    ch.setLevel(logging.DEBUG)
+    formatter = logging.Formatter('[%(asctime)s] %(levelname)s in %(module)s: %(message)s')
+    ch.setFormatter(formatter)
+    logger.addHandler(ch)
 
+# Blueprint AFTER logger
 exam_bp = Blueprint('exam', __name__, url_prefix='/exam')
 
-# Welcome page
+# Now your routes
 @exam_bp.route('/welcome')
 def welcome():
     flash('Welcome! Please login to view your exams.', 'info')
@@ -20,20 +31,61 @@ def exam_login():
     form = ExamLoginForm()
 
     if form.validate_on_submit():
-        user_id = form.user_id.data.strip()
-        password = form.password.data.strip()
+        user_id_input = (form.user_id.data or "").strip()
+        password_input = (form.password.data or "").strip()
 
-        user = User.query.filter_by(user_id=user_id).first()
-        if user and user.check_password(password):
-            if user.role == 'student':  # Only students
-                login_user(user)
-                flash(f"Welcome back, {user.first_name}!", 'success')
-                return redirect(url_for("exam.exam_dashboard"))  # <-- redirect to dashboard
-            else:
-                flash("Only students can log in here.", "danger")
-                return redirect(url_for("exam.exam_login"))
+        logger.debug("Exam login attempt for user_id=%s", user_id_input)
 
+        user = User.query.filter_by(user_id=user_id_input).first()
+        if not user:
+            logger.info("Exam login: no user found for %s", user_id_input)
+            flash("Invalid login credentials.", "danger")
+            return render_template("exam/login.html", form=form)
+
+        # Normal check
+        try:
+            if user.check_password(password_input):
+                if user.role == 'student':
+                    login_user(user)
+                    logger.info("Student logged in: %s", user.user_id)
+                    flash(f"Welcome back, {user.first_name}!", 'success')
+                    return redirect(url_for("exam.exam_dashboard"))
+                else:
+                    logger.warning("Non-student attempted exam login: %s role=%s", user.user_id, user.role)
+                    flash("Only students can log in here.", "danger")
+                    return redirect(url_for("exam.exam_login"))
+        except Exception as e:
+            logger.exception("Error while checking password for %s: %s", user_id_input, e)
+
+        # --- Fallback: legacy plaintext password migration (safe, logged) ---
+        # Only run if you suspect some DB rows contain plaintext passwords.
+        # This compares raw equality and, if matches, re-hashes using set_password().
+        try:
+            ph = getattr(user, 'password_hash', '') or ''
+            looks_hashed = ph.startswith('pbkdf2:') or ph.startswith('argon2:')
+            if not looks_hashed and password_input == ph:
+                logger.warning("Detected legacy plaintext password for %s — migrating to hashed.", user.user_id)
+                user.set_password(password_input)
+                db.session.commit()
+                # now try login again
+                if user.check_password(password_input):
+                    login_user(user)
+                    flash(f"Welcome back, {user.first_name}!", 'success')
+                    return redirect(url_for("exam.exam_dashboard"))
+        except Exception as e:
+            logger.exception("Legacy password migration failed for %s: %s", user.user_id, e)
+
+        # If we get here, credentials are invalid
+        logger.info("Invalid credentials for %s", user_id_input)
         flash("Invalid login credentials.", "danger")
+        # show possible validation errors for debugging (dev only)
+        if form.errors:
+            logger.debug("Login form errors: %s", form.errors)
+
+    else:
+        # If not validate_on_submit and POSTed, log validation errors to debug
+        if request.method == 'POST':
+            logger.debug("Form did not validate. errors=%s", form.errors)
 
     return render_template("exam/login.html", form=form)
 
@@ -103,7 +155,7 @@ def take_exam(exam_id, attempt_id):
 
     if now > exam.end_datetime:
         flash("This exam is closed.", "danger")
-        return redirect(url_for('student.exams'))
+        return redirect(url_for('exam.exams'))
 
     # get attempt record (with assigned set)
     attempt = ExamAttempt.query.filter_by(

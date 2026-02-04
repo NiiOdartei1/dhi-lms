@@ -24,21 +24,50 @@
 <div class="container-fluid py-1 results-container">
   <div class="d-flex justify-content-between align-items-center mb-3">
     <h5 class="fw-semibold text-primary mb-0"><i class="fas fa-chart-line me-2"></i>Assessment Results</h5>
+    <div>
+      {% if semester_status and semester_status['is_locked'] %}
+        <span class="badge bg-warning text-dark">Submitted for vetting (Locked)</span>
+      {% else %}
+        <form method="post" action="{{ url_for('teacher.submit_for_vetting') }}" class="d-inline">
+          <!-- Hidden CSRF token -->
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="academic_year" value="{{ academic_year or '' }}">
+          <input type="hidden" name="semester" value="{{ semester or '' }}">
+          <button type="submit" class="btn btn-sm btn-primary" {% if not can_submit_vetting %}disabled{% endif %}>
+              <i class="fas fa-paper-plane me-1"></i> Submit for Vetting
+          </button>
+</form>
+
+      {% endif %}
+    </div>
   </div>
 
   {% if results|length == 0 %}
     <div class="alert alert-secondary small py-2">No results available yet.</div>
   {% else %}
 
-  <!-- Tabs: Quiz / Exam / Assignment -->
+  <!-- Tabs: Quizzes / Assignments / Exams / Summary -->
   <ul class="nav nav-tabs mb-3" id="typeTabs" role="tablist">
-    {% for t in ['Quiz', 'Exam', 'Assignment'] %}
     <li class="nav-item">
-      <button class="nav-link {% if t=='Quiz' %}active{% endif %}" id="{{ t|lower }}-tab" data-bs-toggle="tab" data-bs-target="#{{ t|lower }}-pane" type="button" role="tab">
-        {% if t=='Quiz' %}Quizzes{% elif t=='Exam' %}Exams{% else %}Assignments{% endif %}
+      <button class="nav-link active" id="quiz-tab" data-bs-toggle="tab" data-bs-target="#quiz-pane" type="button" role="tab">
+        Quizzes
       </button>
     </li>
-    {% endfor %}
+    <li class="nav-item">
+      <button class="nav-link" id="assignment-tab" data-bs-toggle="tab" data-bs-target="#assignment-pane" type="button" role="tab">
+        Assignments
+      </button>
+    </li>
+    <li class="nav-item">
+      <button class="nav-link" id="exam-tab" data-bs-toggle="tab" data-bs-target="#exam-pane" type="button" role="tab">
+        Exams
+      </button>
+    </li>
+    <li class="nav-item">
+      <button class="nav-link" id="summary-tab" data-bs-toggle="tab" data-bs-target="#summary-pane" type="button" role="tab">
+        📊 Summary
+      </button>
+    </li>
   </ul>
 
   <!-- Filters -->
@@ -60,11 +89,11 @@
   </div>
 
   <div class="tab-content" id="typeTabsContent">
-    {% for t in ['Quiz', 'Exam', 'Assignment'] %}
-    <div class="tab-pane fade {% if t=='Quiz' %}show active{% endif %}" id="{{ t|lower }}-pane" role="tabpanel">
+    <!-- Quizzes Tab -->
+    <div class="tab-pane fade show active" id="quiz-pane" role="tabpanel">
       <div class="results-card p-2">
         <div class="table-responsive">
-          <table class="table table-sm table-hover align-middle mb-0" id="{{ t|lower }}Table">
+          <table class="table table-sm table-hover align-middle mb-0" id="quizTable">
             <thead>
               <tr>
                 <th>Course</th>
@@ -76,16 +105,13 @@
               </tr>
             </thead>
             <tbody>
-              {% for r in results if r.type == t %}
+              {% for r in results if r.type == 'Quiz' %}
               <tr data-course="{{ r.course }}" data-student="{{ r.student|lower }}">
                 <td>{{ r.course }}</td>
                 <td>{{ r.student }}</td>
                 <td>{{ "%.2f"|format(r.raw_score or r.score or 0) }}</td>
                 <td>{{ r.weight_percent if r.weight_percent is not none else '-' }}</td>
-                <td class="fw-semibold
-                    {% if t=='Quiz' %}text-success
-                    {% elif t=='Exam' %}text-primary
-                    {% else %}text-warning{% endif %}">
+                <td class="fw-semibold text-success">
                   {{ "%.2f"|format(r.weighted_score or 0) if r.weighted_score is not none else '-' }}
                 </td>
                 <td>{{ r.date or '' }}</td>
@@ -96,7 +122,122 @@
         </div>
       </div>
     </div>
-    {% endfor %}
+
+    <!-- Assignments Tab -->
+    <div class="tab-pane fade" id="assignment-pane" role="tabpanel">
+      <div class="results-card p-2">
+        <div class="table-responsive">
+          <table class="table table-sm table-hover align-middle mb-0" id="assignmentTable">
+            <thead>
+              <tr>
+                <th>Course</th>
+                <th>Student</th>
+                <th>Raw Score</th>
+                <th>Weight (%)</th>
+                <th>Weighted Score</th>
+                <th>Date</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for r in results if r.type == 'Assignment' %}
+              <tr data-course="{{ r.course }}" data-student="{{ r.student|lower }}">
+                <td>{{ r.course }}</td>
+                <td>{{ r.student }}</td>
+                <td>{{ "%.2f"|format(r.raw_score or r.score or 0) }}</td>
+                <td>{{ r.weight_percent if r.weight_percent is not none else '-' }}</td>
+                <td class="fw-semibold text-warning">
+                  {{ "%.2f"|format(r.weighted_score or 0) if r.weighted_score is not none else '-' }}
+                </td>
+                <td>{{ r.date or '' }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Exams Tab -->
+    <div class="tab-pane fade" id="exam-pane" role="tabpanel">
+      <div class="results-card p-2">
+        <div class="table-responsive">
+          <table class="table table-sm table-hover align-middle mb-0" id="examTable">
+            <thead>
+              <tr>
+                <th>Course</th>
+                <th>Student</th>
+                <th>Raw Score</th>
+                <th>Weight (%)</th>
+                <th>Weighted Score</th>
+                <th>Date</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for r in results if r.type == 'Exam' %}
+              <tr data-course="{{ r.course }}" data-student="{{ r.student|lower }}">
+                <td>{{ r.course }}</td>
+                <td>{{ r.student }}</td>
+                <td>{{ "%.2f"|format(r.raw_score or r.score or 0) }}</td>
+                <td>{{ r.weight_percent if r.weight_percent is not none else '-' }}</td>
+                <td class="fw-semibold text-primary">
+                  {{ "%.2f"|format(r.weighted_score or 0) if r.weighted_score is not none else '-' }}
+                </td>
+                <td>{{ r.date or '' }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Summary Tab -->
+    <div class="tab-pane fade" id="summary-pane" role="tabpanel">
+      <div class="results-card p-2">
+        <div class="table-responsive">
+          <table class="table table-sm table-hover align-middle mb-0" id="summaryTable">
+            <thead>
+              <tr>
+                <th>Student</th>
+                <th>Course</th>
+                <th>Quiz Weight</th>
+                <th>Exam Weight</th>
+                <th>Assignment Weight</th>
+                <th>Total Weighted Score</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% set student_summaries = {} %}
+              {% for r in results %}
+                {% set key = (r.student, r.course) %}
+                {% if key not in student_summaries %}
+                  {% set _ = student_summaries.update({key: {'quiz': 0, 'exam': 0, 'assignment': 0}}) %}
+                {% endif %}
+                {% if r.type == 'Quiz' %}
+                  {% set _ = student_summaries[key].update({'quiz': r.weighted_score or 0}) %}
+                {% elif r.type == 'Exam' %}
+                  {% set _ = student_summaries[key].update({'exam': r.weighted_score or 0}) %}
+                {% elif r.type == 'Assignment' %}
+                  {% set _ = student_summaries[key].update({'assignment': r.weighted_score or 0}) %}
+                {% endif %}
+              {% endfor %}
+              
+              {% for (student, course), scores in student_summaries.items() %}
+              {% set total = scores.quiz + scores.exam + scores.assignment %}
+              <tr data-course="{{ course }}" data-student="{{ student|lower }}">
+                <td>{{ student }}</td>
+                <td>{{ course }}</td>
+                <td class="text-success">{{ "%.2f"|format(scores.quiz) if scores.quiz > 0 else '-' }}</td>
+                <td class="text-primary">{{ "%.2f"|format(scores.exam) if scores.exam > 0 else '-' }}</td>
+                <td class="text-warning">{{ "%.2f"|format(scores.assignment) if scores.assignment > 0 else '-' }}</td>
+                <td class="fw-semibold bg-light">{{ "%.2f"|format(total) }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
   </div>
   {% endif %}
 </div>

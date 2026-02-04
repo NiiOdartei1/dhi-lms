@@ -1,6 +1,6 @@
 from flask_wtf import FlaskForm
-from wtforms import BooleanField, EmailField, IntegerField, StringField, PasswordField, SubmitField, DateField, SelectField, FileField, FloatField, TextAreaField
-from wtforms.validators import DataRequired, Email, EqualTo, Length, Optional, NumberRange
+from wtforms import BooleanField, EmailField, IntegerField, StringField, PasswordField, SubmitField, DateField, SelectField, FileField, FloatField, TextAreaField, ValidationError
+from wtforms.validators import DataRequired, Email, EqualTo, Length, Optional, NumberRange, Regexp
 
 # ==============================
 # 1️⃣ Registration Form
@@ -29,8 +29,9 @@ class PersonalInfoForm(FlaskForm):
         validators=[DataRequired()]
     )
 
-    surname = StringField('Surname', validators=[DataRequired()])
-    other_names = StringField('Other / Middle Names', validators=[DataRequired()])
+    surname = StringField('Last Name (Surname)', validators=[DataRequired()])
+    first_name = StringField('First Name', validators=[DataRequired()])
+    other_names = StringField('Other / Middle Names', validators=[Optional()])
 
     gender = SelectField(
         'Gender',
@@ -87,61 +88,95 @@ class GuardianForm(FlaskForm):
     submit = SubmitField('Save & Continue')
 
 
-# Hardcoded sample programmes
-PROGRAMME_CHOICES = [
-    ('BSc Computer Science', 'BSc Computer Science'),
-    ('BSc Mathematics', 'BSc Mathematics'),
-    ('BSc Physics', 'BSc Physics'),
-    ('BA Economics', 'BA Economics'),
-    ('BSc Biology', 'BSc Biology'),
+# Programme lists with a blank first option
+CERTIFICATE_PROGRAMMES = [
+    ('', '— Select Programmes —'),  # Blank line
+    ('Cyber Security', 'Cyber Security'),
+    ('Early Childhood Education', 'Early Childhood Education'),
+    ('Dispensing Technician II & III', 'Dispensing Technician II & III'),
+    ('Diagnostic Medical Sonography', 'Diagnostic Medical Sonography'),
+    ('Medical Laboratory Technology', 'Medical Laboratory Technology'),
+    ('Dispensing Assistant', 'Dispensing Assistant'),
+    ('Health Information Management', 'Health Information Management'),
+    ('Optical Technician', 'Optical Technician')
+]
+
+DIPLOMA_PROGRAMMES = [
+    ('Early Childhood Education', 'Early Childhood Education'),
+    ('Midwifery', 'Midwifery'),
+    ('Ophthalmic Dispensing', 'Ophthalmic Dispensing'),
+    ('Medical Laboratory Technology', 'Medical Laboratory Technology'),
+    ('HND Dispensing Technology', 'HND Dispensing Technology'),
+    ('Health Information Management', 'Health Information Management'),
+    ('Diploma in Early Childhood Education', 'Diploma in Early Childhood Education')
+]
+
+# Study formats already have a blank option
+STUDY_FORMATS = [
+    ('', '— Select Format —'),
+    ('Regular', 'Regular'),
+    ('Sandwich', 'Sandwich'),
+    ('Part-Time', 'Part-Time'),
+    ('Weekend', 'Weekend')
 ]
 
 class ProgrammeChoiceForm(FlaskForm):
+    # 1st Choice
     first_choice = SelectField(
-        'First Choice Programme', 
-        choices=PROGRAMME_CHOICES, 
-        validators=[DataRequired()]
+        '1st Choice Programme',
+        choices=CERTIFICATE_PROGRAMMES + DIPLOMA_PROGRAMMES,
+        validators=[DataRequired(message="Please select your first choice programme.")]
     )
     first_stream = SelectField(
-        'Stream',
-        choices=[('Regular', 'Regular'), ('Fee Paying', 'Fee Paying')]
+        'Study Format',
+        choices=STUDY_FORMATS,
+        validators=[DataRequired(message="Please select a study format.")]
     )
 
+    # 2nd Choice
     second_choice = SelectField(
-        'Second Choice Programme', 
-        choices=PROGRAMME_CHOICES, 
+        '2nd Choice Programme',
+        choices=CERTIFICATE_PROGRAMMES + DIPLOMA_PROGRAMMES,
         validators=[Optional()]
     )
     second_stream = SelectField(
-        'Stream',
-        choices=[('Regular', 'Regular'), ('Fee Paying', 'Fee Paying')],
+        'Study Format',
+        choices=STUDY_FORMATS,
         validators=[Optional()]
     )
 
+    # 3rd Choice
     third_choice = SelectField(
-        'Third Choice Programme', 
-        choices=PROGRAMME_CHOICES, 
+        '3rd Choice Programme',
+        choices=CERTIFICATE_PROGRAMMES + DIPLOMA_PROGRAMMES,
         validators=[Optional()]
     )
     third_stream = SelectField(
-        'Stream',
-        choices=[('Regular', 'Regular'), ('Fee Paying', 'Fee Paying')],
+        'Study Format',
+        choices=STUDY_FORMATS,
         validators=[Optional()]
     )
 
-    fourth_choice = SelectField(
-        'Fourth Choice Programme', 
-        choices=PROGRAMME_CHOICES, 
-        validators=[Optional()]
+    # Sponsor Details
+    sponsor_name = StringField(
+        'Name of Sponsor',
+        validators=[DataRequired(message="Sponsor name is required.")]
     )
-    fourth_stream = SelectField(
-        'Stream',
-        choices=[('Regular', 'Regular'), ('Fee Paying', 'Fee Paying')],
-        validators=[Optional()]
+    sponsor_relation = StringField(
+        'Relationship to Candidate',
+        validators=[DataRequired(message="Please specify relationship.")]
     )
+
+    def validate_first_choice(form, field):
+        if field.data == '':
+            raise ValidationError("Please select your first choice programme.")
+
+    def validate_first_stream(form, field):
+        if field.data == '':
+            raise ValidationError("Please select a study format.")
 
     submit = SubmitField('Save & Continue')
-    
+
 
 class EducationForm(FlaskForm):
     institution = StringField('Institution Attended', validators=[DataRequired()])
@@ -155,18 +190,33 @@ class EducationForm(FlaskForm):
 class ExamInfoForm(FlaskForm):
     exam_type = SelectField(
         'Exam Type',
-        choices=[('WASSCE', 'WASSCE (Ghanaian)'), ('SSSCE', 'SSSCE')],
-        validators=[DataRequired()]
+        choices=[('', '— Select exam —'), ('WASSCE', 'WASSCE (Ghanaian)'), ('SSSCE', 'SSSCE')],
+        validators=[DataRequired(message="Please select an exam type.")]
     )
 
     sitting = SelectField(
         'Sitting',
-        choices=[('May/June', 'May/June (School)'), ('Nov/Dec', 'Nov/Dec (Private)')],
-        validators=[DataRequired()]
+        choices=[('', '— Select —'), ('May/June', 'May/June (School)'), ('Nov/Dec', 'Nov/Dec (Private)')],
+        validators=[DataRequired(message="Please select a sitting.")]
     )
 
-    exam_year = StringField('Exam Year', validators=[DataRequired()])
-    index_number = StringField('Index Number', validators=[DataRequired()])
+    # First sitting — required
+    first_index = StringField('First Index Number', validators=[
+        DataRequired(message="Please enter the first sitting index number."),
+        Length(min=6, max=20, message="Index looks too short/long.")
+    ])
+    first_year = StringField('First Year', validators=[
+        DataRequired(message="Please enter the year for the first sitting."),
+        Regexp(r'^\d{4}$', message="Enter a 4-digit year, e.g. 2018.")
+    ])
+
+    # Second sitting — optional
+    second_index = StringField('Second Index Number', validators=[Optional(), Length(min=6, max=20)])
+    second_year = StringField('Second Year', validators=[Optional(), Regexp(r'^\d{4}$', message="Use YYYY")])
+
+    # Third sitting — optional
+    third_index = StringField('Third Index Number', validators=[Optional(), Length(min=6, max=20)])
+    third_year = StringField('Third Year', validators=[Optional(), Regexp(r'^\d{4}$', message="Use YYYY")])
 
     submit = SubmitField('Save & Continue')
 

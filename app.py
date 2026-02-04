@@ -1,11 +1,24 @@
+# ===== GTK RUNTIME FIX FOR WEASYPRINT (Windows) =====
+import os
+import sys
+
+if sys.platform == "win32":
+    gtk_path = r"C:\Program Files\GTK3-Runtime Win64\bin"
+    if os.path.exists(gtk_path):
+        os.add_dll_directory(gtk_path)
+        os.environ["PATH"] = gtk_path + ";" + os.environ["PATH"]
+# ================================================
+
 # app.py - My LMS — Bulletproof Startup
 
 import os
 import logging
 from datetime import datetime
-from flask import Flask, render_template, redirect, url_for, flash, request, abort, jsonify, send_from_directory
+from flask import Flask, render_template, redirect, url_for, flash, request, abort, jsonify, send_from_directory, current_app
+from sqlalchemy import Table
 from werkzeug.utils import secure_filename
 from dotenv import load_dotenv
+from models import Admin, StudentProfile, User
 
 if os.environ.get("FLASK_ENV") == "production":
     import eventlet
@@ -28,7 +41,8 @@ app = Flask(__name__)
 app.config.from_object(Config)
 
 # ===== Paths =====
-app.config.setdefault('SQLALCHEMY_DATABASE_URI', 'sqlite:///lms.db')
+DB_PATH = os.path.join(app.instance_path, "lms.db")
+app.config['SQLALCHEMY_DATABASE_URI'] = f"sqlite:///{DB_PATH}"
 app.config.setdefault('SESSION_TYPE', 'sqlalchemy')
 app.config['SESSION_SQLALCHEMY'] = db
 app.config.setdefault('SESSION_SQLALCHEMY_TABLE', 'sessions')
@@ -64,14 +78,28 @@ SOCKETIO_ASYNC_MODE = "eventlet" if IS_PRODUCTION else "threading"
 
 logger.info("SocketIO async_mode=%s", SOCKETIO_ASYNC_MODE)
 socketio.init_app(app, async_mode=SOCKETIO_ASYNC_MODE, manage_session=False)
+
+# ===== Patch Flask-Session BEFORE using it =====
+from flask_session.sqlalchemy import SqlAlchemySessionInterface
+from sqlalchemy import Table
+
+# patch to allow redefinition of 'sessions' table
+SqlAlchemySessionInterface.create_session_model = lambda self, app: \
+    Table('sessions', db.metadata, extend_existing=True)
+
+# now import and initialize Session
+from flask_session import Session
 sess = Session(app)
 
 login_manager = LoginManager()
 login_manager.init_app(app)
-login_manager.login_view = 'select_portal'
+login_manager.login_view = 'student.student_login'
 
 # ===== Context processors =====
-# ===== Context processors =====
+@app.context_processor
+def inject_current_app():
+    return dict(current_app=current_app)
+
 @app.context_processor
 def inject_csrf():
     return dict(csrf_token=generate_csrf)
@@ -85,14 +113,19 @@ def inject_active_assessment_period():
     def get_active_period():
         try:
             from models import TeacherAssessmentPeriod
-            # Query only happens when template is rendered (within request context)
             return TeacherAssessmentPeriod.query.filter_by(is_active=True).first()
-        except Exception as e:
-            logger.warning("Error fetching active assessment period: %s", e)
+        except Exception:
             return None
-    
-    # Return the function itself, not the result
-    return {'active_assessment_period': get_active_period()}
+    return {'active_assessment_period': get_active_period}
+
+# ===== Custom Jinja2 Filters =====
+@app.template_filter('floatformat')
+def floatformat(value, decimals=2):
+    """Format a float to specified decimal places (Django-like floatformat)"""
+    try:
+        return f"{float(value):.{int(decimals)}f}"
+    except (ValueError, TypeError):
+        return value
 
 # ===== Error Handlers =====
 @app.errorhandler(CSRFError)
@@ -106,98 +139,142 @@ def set_headers(response):
     return response
 
 
-# Import SocketIO handlers
-import call_window
-
 # Import blueprints
 from admin_routes import admin_bp
 from teacher_routes import teacher_bp
 from student_routes import student_bp
-from parent_routes import parent_bp
 from utils.auth_routes import auth_bp
 from exam_routes import exam_bp
 from vclass_routes import vclass_bp
 from chat_routes import chat_bp
 from admissions.routes import admissions_bp
-#from jarvis import jarvis_bp, run_on_startup
+from utils.notification_routes import notification_bp
+from student_transcript_routes import create_student_transcript_blueprint
+from admin_grading_routes import grading_bp
+from student_results_routes import results_bp
+from finance_routes import finance_bp
+
+student_transcript_bp = create_student_transcript_blueprint()
 
 # Register blueprints
 app.register_blueprint(admin_bp, url_prefix="/admin")
 app.register_blueprint(teacher_bp, url_prefix="/teacher")
 app.register_blueprint(student_bp, url_prefix="/student")
-app.register_blueprint(parent_bp, url_prefix="/parent")
 app.register_blueprint(auth_bp)
 app.register_blueprint(exam_bp, url_prefix="/exam")
 app.register_blueprint(vclass_bp, url_prefix="/vclass")
 app.register_blueprint(chat_bp, url_prefix="/chat")
 app.register_blueprint(admissions_bp, url_prefix="/admissions")
+app.register_blueprint(notification_bp)  # Registered at /notifications
+app.register_blueprint(student_transcript_bp)
+app.register_blueprint(grading_bp)
+app.register_blueprint(results_bp)
+app.register_blueprint(finance_bp, url_prefix='/admin/finance')
 #app.register_blueprint(jarvis_bp)
 
 logger.info("✓ All blueprints registered")
+
+# -------------------------
+# Jinja filters
+# -------------------------
+def _start_year_filter(val):
+    try:
+        if not val:
+            return ''
+        s = str(val)
+        return s.split('/')[0].split('-')[0]
+    except Exception:
+        return val
+
+app.jinja_env.filters['start_year'] = _start_year_filter
 
 # ===== Login Manager =====
 @login_manager.user_loader
 def load_user(user_id):
     try:
-        # Lazy import to avoid DB work at module import time
-        from models import Admin, User
+        logger.debug("load_user called with user_id=%s", user_id)
+        if not user_id:
+            return None
+
         if isinstance(user_id, str) and user_id.startswith("admin:"):
             uid = user_id.split(":", 1)[1]
-            return Admin.query.filter_by(public_id=uid).first()
-        elif isinstance(user_id, str) and user_id.startswith("user:"):
+            admin = Admin.query.filter_by(public_id=uid).first()
+            logger.debug("Loaded admin: %s", getattr(admin, 'username', None))
+            return admin
+
+        if isinstance(user_id, str) and user_id.startswith("user:"):
             uid = user_id.split(":", 1)[1]
-            return User.query.filter_by(public_id=uid).first()
+            user = User.query.filter_by(public_id=uid).first()
+            logger.debug("Loaded user: %s", getattr(user, 'user_id', None))
+            return user
+
+        # Fallback: maybe a raw numeric id was stored
+        try:
+            numeric = int(user_id)
+            user = User.query.get(numeric)
+            if user:
+                logger.debug("Loaded user by numeric id: %s", user.user_id)
+                return user
+        except Exception:
+            pass
+
     except Exception as e:
         logger.exception("user_loader error: %s", e)
     return None
 
 # ===== One-Time Initialization Function =====
 def one_time_init():
-    logger.info("=" * 70)
-    logger.info("STARTING ONE-TIME APP INITIALIZATION")
-    logger.info("=" * 70)
+    logger.info("Starting data initialization")
 
-    # Run Jarvis automatically
-    #run_on_startup(app)
-    
-    # Lazy import models to avoid app-context errors at import time
-    from models import Admin, SchoolClass
-
-    # DB tables
+    # 1️⃣ Ensure tables exist
     db.create_all()
-    logger.info("✓ Database tables created/verified")
 
-    # Default Admin
-    try:
-        super_admin = Admin.query.filter_by(username='SuperAdmin').first()
-    except Exception:
-        super_admin = None
-
+    # 2️⃣ Create SuperAdmin if missing
+    super_admin = Admin.query.filter_by(username='SuperAdmin').first()
     if not super_admin:
-        admin = Admin(username='SuperAdmin', admin_id='ADM001')
+        admin = Admin(
+            username='SuperAdmin',
+            admin_id='ADM001',
+            email='superadmin@dhi.edu.gh',
+            role='superadmin',
+            profile_picture='default_avatar.png'
+        )
         admin.set_password('Password123')
+        Admin.apply_superadmin_preset(admin)
+
         db.session.add(admin)
         db.session.commit()
         logger.info("✓ SuperAdmin created")
     else:
         logger.info("✓ SuperAdmin already exists")
 
-    # Default classes
+    # Default programmes + levels
     try:
-        from utils.helpers import get_class_choices
-        existing = {c.name for c in SchoolClass.query.all()}
+        from utils.helpers import get_programme_choices  # Returns list of (programme_name, levels)
+        
+        # Fetch existing cohorts from StudentProfile (to avoid duplicates)
+        existing_cohorts = {
+            f"{sp.current_programme} {sp.programme_level}"
+            for sp in StudentProfile.query.all()
+        }
+
         created = 0
-        for name, _ in get_class_choices():
-            if name not in existing:
-                db.session.add(SchoolClass(name=name))
-                created += 1
+        for programme_name, levels in get_programme_choices():
+            for level in levels:  # e.g., [100, 200, 300, 400]
+                cohort_str = f"{programme_name} {level}"
+                if cohort_str not in existing_cohorts:
+                    # Optionally create a placeholder in StudentProfile or another "ProgrammeCohort" table
+                    # Here we'll log only
+                    logger.info(f"✓ Default cohort ready: {cohort_str}")
+                    created += 1
+
         if created:
-            db.session.commit()
-            logger.info(f"✓ Created {created} default classes")
+            logger.info(f"✓ Prepared {created} default tertiary cohorts")
         else:
-            logger.info("✓ All default classes already exist")
+            logger.info("✓ All default cohorts already exist")
+
     except Exception as e:
-        logger.exception("⚠ Class setup warning (non-fatal): %s", e)
+        logger.exception("⚠ Programme setup warning (non-fatal): %s", e)
 
     logger.info("=" * 70)
     logger.info("✓✓✓ APP INITIALIZATION COMPLETE - READY TO SERVE REQUESTS ✓✓✓")
@@ -222,7 +299,6 @@ def redirect_to_portal(portal):
         'exams': 'exam.exam_login',
         'teachers': 'teacher.teacher_login',
         'students': 'student.student_login',
-        'parents': 'parent.parent_login',
         'vclass': 'vclass.vclass_login'
     }
     key = portal.lower()
@@ -248,18 +324,6 @@ def list_routes():
     from urllib.parse import unquote
     lines = [f"{rule.endpoint:30s} → {unquote(str(rule))}" for rule in app.url_map.iter_rules()]
     return "<pre>" + "\n".join(sorted(lines)) + "</pre>"
-
-
-#from utils.email import send_email
-
-#@app.route('/test-email')
-#def test_email():
-#    send_email(
-#        "lampteyjoseph860@gmail.com",
-#        "Email Test Successful",
-#        "If you received this email, Flask-Mailman is working correctly."
-#    )
-#    return "Email sent successfully"
 
 # ===== Run =====
 if __name__ == "__main__":

@@ -2,7 +2,7 @@ from flask import Blueprint, render_template, request, jsonify
 from flask_login import login_required, current_user
 from flask_socketio import emit, join_room
 from utils.extensions import db, socketio
-from models import Admin, Conversation, ConversationParticipant, Message, MessageReaction, SchoolClass, User, ParentChildLink
+from models import Conversation, ConversationParticipant, Message, MessageReaction, User, Admin, StudentProfile, TeacherProfile
 from datetime import datetime
 import json
 
@@ -11,21 +11,31 @@ chat_bp = Blueprint('chat', __name__, url_prefix='/chat')
 # -------------------------
 # Helper functions
 # -------------------------
+def is_user_or_admin():
+    """Check if current user is a teacher, student, or admin. Allows all authenticated users."""
+    role = getattr(current_user, "role", None)
+    return role in ["teacher", "student", "superadmin", "finance_admin", "academic_admin", "admissions_admin"]
+
 def resolve_person_by_public_id(pub_id):
-    """Return (model_instance, role_string) or (None, None)."""
+    """Return (model_instance, role_string) or (None, None). Checks both User and Admin tables."""
     if not pub_id:
         return None, None
+    
+    # Try to find in User table first (students/teachers)
     person = User.query.filter_by(public_id=pub_id).first()
     if person:
         return person, getattr(person, "role", "user")
+    
+    # Try to find in Admin table
     admin = Admin.query.filter_by(public_id=pub_id).first()
     if admin:
-        return admin, "admin"
+        return admin, admin.role  # admin.role is a database column, not a property
+    
     return None, None
 
 def add_participant_if_not_exists(conv_id, person_or_public_id, role=None):
     """
-    Accept either a User/Admin instance (preferred) OR a public_id string (for external callers).
+    Accept either a User instance (preferred) OR a public_id string (for external callers).
     Adds a ConversationParticipant row keyed by user_public_id.
     """
     if not person_or_public_id:
@@ -77,9 +87,11 @@ def conversation_to_dict(conv, current_user_pubid):
         None
     ) or datetime.min
 
+    # Only count messages from OTHER users as unread (not own messages)
     unread_count = sum(
         1 for m in conv.messages
         if (m.created_at or datetime.min) > last_read_at
+        and m.sender_public_id != current_user_pubid
     )
 
     meta = conv.get_meta() or {}
@@ -108,6 +120,7 @@ def conversation_to_dict(conv, current_user_pubid):
     }
 
 def require_group_admin(conv_id):
+    """Check if current user is a group admin for this conversation."""
     p = ConversationParticipant.query.filter_by(
         conversation_id=conv_id,
         user_public_id=current_user.public_id,
@@ -121,14 +134,15 @@ def require_group_admin(conv_id):
 online_users = set()
 sid_to_pub = {}
 
-# -----------------------------
+# ─────────────────────────
 # SocketIO events
-# -----------------------------
-from flask_socketio import disconnect
-
+# ─────────────────────────
 @socketio.on('join')
 def on_join(data):
-    # client should emit { user_id: "<public_id>" } but we also try current_user
+    """User joins chat (must be teacher or student)."""
+    if not is_user_or_admin():
+        return
+    
     pub = (data or {}).get('user_id') or getattr(current_user, 'public_id', None)
     if not pub:
         return
@@ -139,23 +153,20 @@ def on_join(data):
     online_users.add(pub)
     join_room(f"user_{pub}")
 
-    # notify all clients (no broadcast kwarg)
     socketio.emit('presence_update', {'user_public_id': pub, 'status': 'online'})
 
 @socketio.on('disconnect')
 def on_disconnect():
-    # request.sid is the disconnected client's sid
+    """Handle user disconnect."""
     sid = request.sid
     pub = sid_to_pub.pop(sid, None)
 
-    # fallback: attempt current_user.public_id if available
     if not pub:
         pub = getattr(current_user, 'public_id', None)
 
     if pub and pub in online_users:
         online_users.remove(pub)
 
-        # Update last_seen in database
         person, _ = resolve_person_by_public_id(pub)
         if person:
             person.last_seen = datetime.utcnow()
@@ -172,15 +183,17 @@ def on_disconnect():
 
 @socketio.on('send_message')
 def handle_message(data):
-    """
-    Socket event for realtime messages.
-    Expected data: { conversation_id: int, message: string, reply_to_message_id: int (optional) }
-    """
+    """Socket event for realtime messages."""
+    if not is_user_or_admin():
+        return
+    
     conv_id = data.get('conversation_id')
     message_text = data.get('message')
     reply_to_message_id = data.get('reply_to_message_id')
+    
     if not conv_id or not message_text:
         return
+    
     sender_pub = getattr(current_user, 'public_id', None)
     msg = Message(
         conversation_id=conv_id,
@@ -195,37 +208,30 @@ def handle_message(data):
         conv.updated_at = datetime.utcnow()
     db.session.commit()
 
-    # emit to participant rooms using user_public_id
     if conv:
         for part in conv.participants:
             room = f"user_{part.user_public_id}"
             socketio.emit('new_message', {"conversation_id": conv.id, "message": msg.to_dict()}, room=room)
 
-# -------------------------
+# ─────────────────────────
 # Routes
-# -------------------------
+# ─────────────────────────
 @chat_bp.route('/')
 @login_required
 def chat_home():
+    """Chat home page (teachers and students only)."""
+    if not is_user_or_admin():
+        return jsonify({"error": "Access denied. Only teachers and students can access chat."}), 403
+    
     return render_template('chat.html')
-
-# -------------------------
-# Routes for classes
-# -------------------------
-@chat_bp.route('/classes')
-@login_required
-def get_classes():
-    """
-    Returns all school classes.
-    Output format: [{ "id": 1, "name": "Primary 1" }, ...]
-    """
-    classes = SchoolClass.query.order_by(SchoolClass.name).all()
-    result = [{"id": c.id, "name": c.name} for c in classes]
-    return jsonify(result), 200
 
 @chat_bp.route('/conversations', methods=['GET'])
 @login_required
 def get_conversations():
+    """Get all conversations for the current user."""
+    if not is_user_or_admin():
+        return jsonify({"error": "Access denied"}), 403
+    
     conv_participants = ConversationParticipant.query.filter_by(
         user_public_id=current_user.public_id
     ).all()
@@ -236,11 +242,19 @@ def get_conversations():
 @chat_bp.route('/conversations/<int:conv_id>/messages', methods=['GET'])
 @login_required
 def get_messages(conv_id):
-    conv = Conversation.query.get_or_404(conv_id)
-    is_participant = ConversationParticipant.query.filter_by(conversation_id=conv_id, user_public_id=current_user.public_id).first() is not None
-    is_site_admin = getattr(current_user, "role", "") == "admin" or getattr(current_user, "is_admin", False)
-    if not (is_participant or is_site_admin):
+    """Get messages from a conversation (participant access only)."""
+    if not is_user_or_admin():
         return jsonify({"error": "Access denied"}), 403
+    
+    conv = Conversation.query.get_or_404(conv_id)
+    is_participant = ConversationParticipant.query.filter_by(
+        conversation_id=conv_id,
+        user_public_id=current_user.public_id
+    ).first() is not None
+    
+    if not is_participant:
+        return jsonify({"error": "Access denied"}), 403
+    
     messages = [m.to_dict() for m in conv.messages if not m.is_deleted]
     
     # Add reactions to each message
@@ -253,10 +267,13 @@ def get_messages(conv_id):
 @chat_bp.route('/presence/<public_id>')
 @login_required
 def get_presence(public_id):
+    """Get presence status of a user."""
+    if not is_user_or_admin():
+        return jsonify({"error": "Access denied"}), 403
+    
     if public_id in online_users:
         return jsonify({"status": "online"})
 
-    # Get last_seen from database
     person, _ = resolve_person_by_public_id(public_id)
     if person and person.last_seen:
         return jsonify({
@@ -264,7 +281,6 @@ def get_presence(public_id):
             "last_seen": person.last_seen.isoformat()
         })
 
-    # fallback: last message timestamp if no last_seen
     last_msg = Message.query.filter_by(
         sender_public_id=public_id
     ).order_by(Message.created_at.desc()).first()
@@ -277,11 +293,10 @@ def get_presence(public_id):
 @chat_bp.route('/send_dm', methods=['POST'])
 @login_required
 def send_dm():
-    """
-    Expects JSON:
-      - message (string)
-      - receiver_public_id (string)
-    """
+    """Send a direct message to another user or admin."""
+    if not is_user_or_admin():
+        return jsonify({"success": False, "error": "Access denied"}), 403
+    
     data = request.json or {}
     message_text = data.get('message')
     receiver_public_id = data.get('receiver_public_id')
@@ -295,6 +310,11 @@ def send_dm():
     receiver, receiver_role = resolve_person_by_public_id(receiver_public_id)
     if not receiver:
         return jsonify({"success": False, "error": "Receiver not found"}), 404
+    
+    # Allow messaging to: teacher, student, or admin
+    # Admins not bound by programme, so programme validation only for students/teachers
+    if receiver_role not in ["teacher", "student", "superadmin", "finance_admin", "academic_admin", "admissions_admin"]:
+        return jsonify({"success": False, "error": "Invalid recipient role"}), 403
 
     my_pub = current_user.public_id
     rec_pub = receiver_public_id
@@ -305,14 +325,12 @@ def send_dm():
             "error": "You cannot send a message to yourself."
         }), 400
 
-    # Check if DM conversation already exists between these two public ids
     conv = Conversation.query.filter(
         Conversation.type == 'direct',
         Conversation.participants.any(ConversationParticipant.user_public_id == my_pub),
         Conversation.participants.any(ConversationParticipant.user_public_id == rec_pub)
     ).first()
 
-    # Create conversation if not exists
     if not conv:
         conv = Conversation(type='direct', created_at=datetime.utcnow(), updated_at=datetime.utcnow())
         db.session.add(conv)
@@ -321,13 +339,17 @@ def send_dm():
         add_participant_if_not_exists(conv.id, receiver, role=receiver_role)
         db.session.commit()
 
-    # Create message
-    msg = Message(conversation_id=conv.id, sender_public_id=my_pub, sender_role=getattr(current_user, "role", "user"), content=message_text, reply_to_message_id=reply_to_message_id)
+    msg = Message(
+        conversation_id=conv.id,
+        sender_public_id=my_pub,
+        sender_role=getattr(current_user, "role", "user"),
+        content=message_text,
+        reply_to_message_id=reply_to_message_id
+    )
     db.session.add(msg)
     conv.updated_at = datetime.utcnow()
     db.session.commit()
 
-    # Emit to participants
     for p in conv.participants:
         room = f"user_{p.user_public_id}"
         socketio.emit('new_message', {"conversation_id": conv.id, "message": msg.to_dict()}, room=room)
@@ -337,35 +359,112 @@ def send_dm():
 @chat_bp.route('/mark_read', methods=['POST'])
 @login_required
 def mark_read():
+    """Mark conversation as read."""
+    if not is_user_or_admin():
+        return jsonify({"error": "Access denied"}), 403
+    
     data = request.json or {}
     conversation_id = data.get('conversation_id')
-    conv_part = ConversationParticipant.query.filter_by(conversation_id=conversation_id, user_public_id=getattr(current_user, 'public_id', None)).first()
+    conv_part = ConversationParticipant.query.filter_by(
+        conversation_id=conversation_id,
+        user_public_id=getattr(current_user, 'public_id', None)
+    ).first()
     if conv_part:
         conv_part.last_read_at = datetime.utcnow()
         db.session.commit()
     return jsonify({"success": True}), 200
 
+@chat_bp.route('/programmes')
+@login_required
+def get_programmes():
+    """Get all programmes (used for filtering students in chat)."""
+    if not is_user_or_admin():
+        return jsonify({"error": "Access denied"}), 403
+    
+    # Get unique programmes from StudentProfile
+    programmes = db.session.query(StudentProfile.current_programme).distinct().all()
+    result = [{"name": p[0]} for p in programmes if p[0]]
+    return jsonify(result), 200
+
+@chat_bp.route('/levels')
+@login_required
+def get_levels():
+    """Get all programme levels (used for filtering students in chat)."""
+    if not is_user_or_admin():
+        return jsonify({"error": "Access denied"}), 403
+    
+    # Get unique levels from StudentProfile
+    levels = db.session.query(StudentProfile.programme_level).distinct().order_by(StudentProfile.programme_level).all()
+    result = [{"level": int(l[0])} for l in levels if l[0]]
+    return jsonify(result), 200
+
 @chat_bp.route('/users')
 @login_required
 def get_users():
+    """
+    Get list of teachers, students, and admins filtered by programme and level.
+    Query params:
+      - role: 'teacher', 'student', or 'admin' (required)
+      - programme: filter students by programme name
+      - level: filter students by programme level
+    """
+    if not is_user_or_admin():
+        return jsonify({"error": "Access denied"}), 403
+    
     role = request.args.get('role')
-    class_id = request.args.get('class_id')
+    programme = request.args.get('programme')
+    level = request.args.get('level')
 
-    if not role:
+    # Allow querying teachers, students, and admins
+    if role not in ['teacher', 'student', 'admin']:
         return jsonify([])
 
-    q = User.query.filter(
-        User.role == role,
-        User.id != current_user.id   # exclude self
-    )
+    if role == 'admin':
+        # Get all admins except current user
+        users = Admin.query.filter(
+            Admin.public_id != current_user.public_id
+        ).order_by(Admin.username).all() if hasattr(current_user, 'public_id') else []
+        
+        # Build response for admins
+        return jsonify([
+            {
+                "id": u.public_id,
+                "name": f"{u.username} ({u.role.replace('_', ' ').title()})"
+            }
+            for u in users
+        ])
 
-    # ONLY students are class-bound
-    if role == 'student':
-        if not class_id:
-            return jsonify([])
-        q = q.filter(User.class_id == int(class_id))
-
-    users = q.order_by(User.first_name, User.last_name).all()
+    elif role == 'teacher':
+        # Get all teachers except current user
+        users = User.query.filter(
+            User.role == 'teacher',
+            User.id != current_user.id
+        ).order_by(User.first_name, User.last_name).all()
+    
+    else:  # role == 'student'
+        # ✅ FIXED: Query students through StudentProfile
+        # Join User with StudentProfile to filter by programme and level
+        query = db.session.query(User).join(
+            StudentProfile,
+            User.user_id == StudentProfile.user_id
+        ).filter(
+            User.role == 'student',
+            User.id != current_user.id
+        )
+        
+        # Filter by programme if provided
+        if programme:
+            query = query.filter(StudentProfile.current_programme == programme)
+        
+        # Filter by level if provided
+        if level:
+            try:
+                level_int = int(level)
+                query = query.filter(StudentProfile.programme_level == level_int)
+            except (ValueError, TypeError):
+                pass
+        
+        users = query.order_by(User.first_name, User.last_name).all()
 
     return jsonify([
         {
@@ -378,6 +477,10 @@ def get_users():
 @chat_bp.route('/conversations/<int:conv_id>/messages/<int:msg_id>/edit', methods=['POST'])
 @login_required
 def edit_message(conv_id, msg_id):
+    """Edit your own message."""
+    if not is_user_or_admin():
+        return jsonify({"error": "Access denied"}), 403
+    
     conv = Conversation.query.get_or_404(conv_id)
 
     participant = ConversationParticipant.query.filter_by(
@@ -416,6 +519,10 @@ def edit_message(conv_id, msg_id):
 @chat_bp.route('/conversations/<int:conv_id>/messages/<int:msg_id>/delete', methods=['POST'])
 @login_required
 def delete_message(conv_id, msg_id):
+    """Delete your own message."""
+    if not is_user_or_admin():
+        return jsonify({"error": "Access denied"}), 403
+    
     conv = Conversation.query.get_or_404(conv_id)
 
     participant = ConversationParticipant.query.filter_by(
@@ -449,6 +556,10 @@ def delete_message(conv_id, msg_id):
 @chat_bp.route('/conversations/<int:conv_id>/messages/<int:msg_id>/copy', methods=['GET'])
 @login_required
 def copy_message(conv_id, msg_id):
+    """Copy message content."""
+    if not is_user_or_admin():
+        return jsonify({"error": "Access denied"}), 403
+    
     conv = Conversation.query.get_or_404(conv_id)
 
     participant = ConversationParticipant.query.filter_by(
@@ -468,12 +579,15 @@ def copy_message(conv_id, msg_id):
 @chat_bp.route('/conversations/<int:conv_id>/messages/<int:msg_id>/react', methods=['POST'])
 @login_required
 def add_reaction(conv_id, msg_id):
+    """Add emoji reaction to message."""
+    if not is_user_or_admin():
+        return jsonify({"error": "Access denied"}), 403
+    
     data = request.json or {}
     emoji = data.get('emoji')
     if not emoji:
         return jsonify({"error": "Emoji required"}), 400
 
-    # Check access
     participant = ConversationParticipant.query.filter_by(
         conversation_id=conv_id,
         user_public_id=current_user.public_id
@@ -483,7 +597,6 @@ def add_reaction(conv_id, msg_id):
 
     msg = Message.query.filter_by(id=msg_id, conversation_id=conv_id).first_or_404()
 
-    # Check if reaction already exists
     existing = MessageReaction.query.filter_by(
         message_id=msg_id,
         user_public_id=current_user.public_id,
@@ -500,7 +613,6 @@ def add_reaction(conv_id, msg_id):
     db.session.add(reaction)
     db.session.commit()
 
-    # Emit to all participants
     participants = ConversationParticipant.query.filter_by(conversation_id=conv_id).all()
     for p in participants:
         socketio.emit(
@@ -514,12 +626,15 @@ def add_reaction(conv_id, msg_id):
 @chat_bp.route('/conversations/<int:conv_id>/messages/<int:msg_id>/react', methods=['DELETE'])
 @login_required
 def remove_reaction(conv_id, msg_id):
+    """Remove emoji reaction from message."""
+    if not is_user_or_admin():
+        return jsonify({"error": "Access denied"}), 403
+    
     data = request.json or {}
     emoji = data.get('emoji')
     if not emoji:
         return jsonify({"error": "Emoji required"}), 400
 
-    # Check access
     participant = ConversationParticipant.query.filter_by(
         conversation_id=conv_id,
         user_public_id=current_user.public_id
@@ -536,7 +651,6 @@ def remove_reaction(conv_id, msg_id):
     db.session.delete(reaction)
     db.session.commit()
 
-    # Emit to all participants
     participants = ConversationParticipant.query.filter_by(conversation_id=conv_id).all()
     for p in participants:
         socketio.emit(
@@ -553,17 +667,19 @@ def remove_reaction(conv_id, msg_id):
 )
 @login_required
 def forward_message(conv_id, msg_id):
+    """Forward a message to another conversation."""
+    if not is_user_or_admin():
+        return jsonify({"error": "Access denied"}), 403
+    
     data = request.get_json(silent=True) or {}
     target_conv_id = data.get("target_conversation_id")
 
     if not target_conv_id:
         return jsonify({"error": "Missing target_conversation_id"}), 400
 
-    # ── Fetch conversations
     source_conv = Conversation.query.get_or_404(conv_id)
     target_conv = Conversation.query.get_or_404(target_conv_id)
 
-    # ── Permission: must be participant in BOTH conversations
     is_source_participant = ConversationParticipant.query.filter_by(
         conversation_id=conv_id,
         user_public_id=current_user.public_id
@@ -577,7 +693,6 @@ def forward_message(conv_id, msg_id):
     if not is_source_participant or not is_target_participant:
         return jsonify({"error": "Access denied"}), 403
 
-    # ── Message must belong to source conversation
     msg = Message.query.filter_by(
         id=msg_id,
         conversation_id=conv_id
@@ -586,7 +701,6 @@ def forward_message(conv_id, msg_id):
     if msg.is_deleted:
         return jsonify({"error": "Message deleted"}), 400
 
-    # ── Create forwarded copy (sender = current user)
     new_msg = Message(
         conversation_id=target_conv.id,
         sender_public_id=current_user.public_id,
@@ -598,7 +712,6 @@ def forward_message(conv_id, msg_id):
     target_conv.updated_at = datetime.utcnow()
     db.session.commit()
 
-    # ── Realtime notify all participants in target conversation
     for p in target_conv.participants:
         socketio.emit(
             'new_message',
@@ -615,6 +728,10 @@ def forward_message(conv_id, msg_id):
 @chat_bp.route('/conversations/group/create', methods=['POST'])
 @login_required
 def create_group():
+    """Create a new group conversation."""
+    if not is_user_or_admin():
+        return jsonify({"error": "Access denied"}), 403
+    
     data = request.get_json() or {}
     name = data.get('name', '').strip()
     members = data.get('members', [])
@@ -622,7 +739,6 @@ def create_group():
     if not name or not members:
         return jsonify({'error': 'Invalid input'}), 400
 
-    # Create group conversation
     conv = Conversation(type='group')
     conv.set_meta({
         "name": name,
@@ -633,13 +749,11 @@ def create_group():
     db.session.add(conv)
     db.session.flush()
 
-    # Add creator (admin)
     add_participant_if_not_exists(conv.id, current_user)
 
-    # Add selected members
     for pub_id in members:
         person, role = resolve_person_by_public_id(pub_id)
-        if person:
+        if person and role in ["teacher", "student"]:
             add_participant_if_not_exists(conv.id, person, role)
 
     db.session.commit()
@@ -649,6 +763,10 @@ def create_group():
 @chat_bp.route('/groups/<int:conv_id>/rename', methods=['POST'])
 @login_required
 def rename_group(conv_id):
+    """Rename a group conversation."""
+    if not is_user_or_admin():
+        return jsonify({"error": "Access denied"}), 403
+    
     admin = require_group_admin(conv_id)
     if not admin or not admin.can_rename_group:
         return jsonify({"error": "Permission denied"}), 403
@@ -670,6 +788,10 @@ def rename_group(conv_id):
 @chat_bp.route('/groups/<int:conv_id>/add_member', methods=['POST'])
 @login_required
 def add_group_member(conv_id):
+    """Add a member to a group conversation."""
+    if not is_user_or_admin():
+        return jsonify({"error": "Access denied"}), 403
+    
     admin = require_group_admin(conv_id)
     if not admin or not admin.can_add_members:
         return jsonify({"error": "Permission denied"}), 403
@@ -680,6 +802,9 @@ def add_group_member(conv_id):
     person, role = resolve_person_by_public_id(pub_id)
     if not person:
         return jsonify({"error": "User not found"}), 404
+    
+    if role not in ["teacher", "student"]:
+        return jsonify({"error": "Can only add teachers and students"}), 403
 
     add_participant_if_not_exists(conv_id, person, role)
     db.session.commit()
@@ -689,6 +814,10 @@ def add_group_member(conv_id):
 @chat_bp.route('/groups/<int:conv_id>/remove_member', methods=['POST'])
 @login_required
 def remove_group_member(conv_id):
+    """Remove a member from a group conversation."""
+    if not is_user_or_admin():
+        return jsonify({"error": "Access denied"}), 403
+    
     admin = require_group_admin(conv_id)
     if not admin or not admin.can_remove_members:
         return jsonify({"error": "Permission denied"}), 403
@@ -707,6 +836,10 @@ def remove_group_member(conv_id):
 @chat_bp.route('/conversations/<int:conv_id>/messages', methods=['POST'])
 @login_required
 def post_conversation_message(conv_id):
+    """Post a message to a conversation."""
+    if not is_user_or_admin():
+        return jsonify({"success": False, "error": "Access denied"}), 403
+    
     data = request.get_json(silent=True) or {}
     message_text = (data.get('message') or '').strip()
     reply_to_message_id = data.get('reply_to_message_id')
@@ -721,18 +854,15 @@ def post_conversation_message(conv_id):
         user_public_id=current_user.public_id
     ).first() is not None
 
-    is_site_admin = getattr(current_user, "role", "") == "admin" or getattr(current_user, "is_admin", False)
-
-    if not (is_participant or is_site_admin):
+    if not is_participant:
         return jsonify({"success": False, "error": "Access denied"}), 403
 
-    # ✅ Validate reply target
     if reply_to_message_id:
-        parent = Message.query.filter_by(
+        reply_target = Message.query.filter_by(
             id=reply_to_message_id,
             conversation_id=conv_id
         ).first()
-        if not parent:
+        if not reply_target:
             return jsonify({"success": False, "error": "Invalid reply target"}), 400
 
     msg = Message(
@@ -740,7 +870,7 @@ def post_conversation_message(conv_id):
         sender_public_id=current_user.public_id,
         sender_role=getattr(current_user, "role", "user"),
         content=message_text,
-        reply_to_message_id=reply_to_message_id   # ✅ FIX
+        reply_to_message_id=reply_to_message_id
     )
 
     db.session.add(msg)
@@ -763,14 +893,16 @@ def post_conversation_message(conv_id):
 @chat_bp.route('/conversations/<int:conv_id>/add_members', methods=['POST'])
 @login_required
 def add_members_to_group(conv_id):
+    """Add multiple members to a group conversation."""
+    if not is_user_or_admin():
+        return jsonify({"success": False, "error": "Access denied"}), 403
+    
     conv = Conversation.query.get_or_404(conv_id)
     if conv.type != 'group':
         return jsonify({"success": False, "error": "Not a group conversation"}), 400
 
-    # Check if current user is participant or admin
     is_participant = any(p.user_public_id == current_user.public_id for p in conv.participants)
-    is_site_admin = getattr(current_user, "role", "") == "admin" or getattr(current_user, "is_admin", False)
-    if not (is_participant or is_site_admin):
+    if not is_participant:
         return jsonify({"success": False, "error": "Access denied"}), 403
 
     data = request.get_json()
@@ -783,7 +915,10 @@ def add_members_to_group(conv_id):
         person, role = resolve_person_by_public_id(str(user_id))
         if not person:
             continue
-        # Check if already participant
+        
+        if role not in ["teacher", "student"]:
+            continue
+        
         exists = ConversationParticipant.query.filter_by(
             conversation_id=conv_id,
             user_public_id=str(user_id)
@@ -798,24 +933,22 @@ def add_members_to_group(conv_id):
 
     db.session.commit()
 
-    # Create a system message in the group
     added_names = []
     for uid in added:
         person, _ = resolve_person_by_public_id(uid)
         if person:
-            added_names.append(getattr(person, 'display_name', getattr(person, 'username', uid)))
+            added_names.append(getattr(person, 'full_name', getattr(person, 'username', uid)))
 
     if added_names:
         msg = Message(
             conversation_id=conv.id,
             sender_public_id=current_user.public_id,
             sender_role=getattr(current_user, "role", "user"),
-            content=f"{getattr(current_user, 'display_name', getattr(current_user, 'username', 'Someone'))} added {', '.join(added_names)} to the group"
+            content=f"{getattr(current_user, 'full_name', getattr(current_user, 'username', 'Someone'))} added {', '.join(added_names)} to the group"
         )
         db.session.add(msg)
         db.session.commit()
 
-        # Notify all participants in the group
         for p in conv.participants:
             socketio.emit(
                 'new_message',
@@ -825,10 +958,277 @@ def add_members_to_group(conv_id):
 
     return jsonify({"success": True, "added": added}), 200
 
-@chat_bp.route("/call/<target_id>")
+
+# ========================================
+# CONVERSATION CONTEXT MENU ACTIONS
+# ========================================
+
+@chat_bp.route('/mark-unread/<int:conv_id>', methods=['POST'])
 @login_required
-def call_window(target_id):
-    # you can pass caller_name from DB
-    caller = User.query.filter_by(public_id=target_id).first()
-    caller_name = caller.full_name if caller else "Unknown"
-    return render_template("call_window.html", caller_name=caller_name)
+def mark_conversation_unread(conv_id):
+    """Mark conversation as unread by resetting last_read_at."""
+    conv = Conversation.query.get_or_404(conv_id)
+    
+    # Check if user is participant
+    participant = ConversationParticipant.query.filter_by(
+        conversation_id=conv_id,
+        user_public_id=current_user.public_id
+    ).first()
+    
+    if not participant:
+        return jsonify({"success": False, "error": "Not a participant"}), 403
+    
+    # Set last_read_at to before all messages to mark as unread
+    participant.last_read_at = datetime.min
+    db.session.commit()
+    
+    return jsonify({"success": True})
+
+
+@chat_bp.route('/mark-read/<int:conv_id>', methods=['POST'])
+@login_required
+def mark_conversation_read(conv_id):
+    """Mark conversation as read by updating last_read_at."""
+    conv = Conversation.query.get_or_404(conv_id)
+    
+    # Check if user is participant
+    participant = ConversationParticipant.query.filter_by(
+        conversation_id=conv_id,
+        user_public_id=current_user.public_id
+    ).first()
+    
+    if not participant:
+        return jsonify({"success": False, "error": "Not a participant"}), 403
+    
+    # Set last_read_at to now
+    participant.last_read_at = datetime.utcnow()
+    db.session.commit()
+    
+    return jsonify({"success": True})
+
+
+@chat_bp.route('/mute/<int:conv_id>', methods=['POST'])
+@login_required
+def mute_conversation(conv_id):
+    """Mute conversation notifications."""
+    conv = Conversation.query.get_or_404(conv_id)
+    
+    # Check if user is participant
+    participant = ConversationParticipant.query.filter_by(
+        conversation_id=conv_id,
+        user_public_id=current_user.public_id
+    ).first()
+    
+    if not participant:
+        return jsonify({"success": False, "error": "Not a participant"}), 403
+    
+    # Store mute status in metadata
+    meta = conv.get_meta() or {}
+    if 'muted_by' not in meta:
+        meta['muted_by'] = []
+    if current_user.public_id not in meta['muted_by']:
+        meta['muted_by'].append(current_user.public_id)
+    conv.set_meta(meta)
+    
+    db.session.commit()
+    
+    return jsonify({"success": True})
+
+
+@chat_bp.route('/unmute/<int:conv_id>', methods=['POST'])
+@login_required
+def unmute_conversation(conv_id):
+    """Unmute conversation notifications."""
+    conv = Conversation.query.get_or_404(conv_id)
+    
+    # Check if user is participant
+    participant = ConversationParticipant.query.filter_by(
+        conversation_id=conv_id,
+        user_public_id=current_user.public_id
+    ).first()
+    
+    if not participant:
+        return jsonify({"success": False, "error": "Not a participant"}), 403
+    
+    # Remove from mute list
+    meta = conv.get_meta() or {}
+    if 'muted_by' in meta and current_user.public_id in meta['muted_by']:
+        meta['muted_by'].remove(current_user.public_id)
+    conv.set_meta(meta)
+    
+    db.session.commit()
+    
+    return jsonify({"success": True})
+
+
+@chat_bp.route('/pin/<int:conv_id>', methods=['POST'])
+@login_required
+def pin_conversation(conv_id):
+    """Pin conversation to top."""
+    conv = Conversation.query.get_or_404(conv_id)
+    
+    # Check if user is participant
+    participant = ConversationParticipant.query.filter_by(
+        conversation_id=conv_id,
+        user_public_id=current_user.public_id
+    ).first()
+    
+    if not participant:
+        return jsonify({"success": False, "error": "Not a participant"}), 403
+    
+    # Store pin status in metadata
+    meta = conv.get_meta() or {}
+    if 'pinned_by' not in meta:
+        meta['pinned_by'] = []
+    if current_user.public_id not in meta['pinned_by']:
+        meta['pinned_by'].append(current_user.public_id)
+    conv.set_meta(meta)
+    
+    db.session.commit()
+    
+    return jsonify({"success": True})
+
+
+@chat_bp.route('/unpin/<int:conv_id>', methods=['POST'])
+@login_required
+def unpin_conversation(conv_id):
+    """Unpin conversation."""
+    conv = Conversation.query.get_or_404(conv_id)
+    
+    # Check if user is participant
+    participant = ConversationParticipant.query.filter_by(
+        conversation_id=conv_id,
+        user_public_id=current_user.public_id
+    ).first()
+    
+    if not participant:
+        return jsonify({"success": False, "error": "Not a participant"}), 403
+    
+    # Remove from pin list
+    meta = conv.get_meta() or {}
+    if 'pinned_by' in meta and current_user.public_id in meta['pinned_by']:
+        meta['pinned_by'].remove(current_user.public_id)
+    conv.set_meta(meta)
+    
+    db.session.commit()
+    
+    return jsonify({"success": True})
+
+
+@chat_bp.route('/archive/<int:conv_id>', methods=['POST'])
+@login_required
+def archive_conversation(conv_id):
+    """Archive conversation."""
+    conv = Conversation.query.get_or_404(conv_id)
+    
+    # Check if user is participant
+    participant = ConversationParticipant.query.filter_by(
+        conversation_id=conv_id,
+        user_public_id=current_user.public_id
+    ).first()
+    
+    if not participant:
+        return jsonify({"success": False, "error": "Not a participant"}), 403
+    
+    # Store archive status in metadata
+    meta = conv.get_meta() or {}
+    if 'archived_by' not in meta:
+        meta['archived_by'] = []
+    if current_user.public_id not in meta['archived_by']:
+        meta['archived_by'].append(current_user.public_id)
+    conv.set_meta(meta)
+    
+    db.session.commit()
+    
+    return jsonify({"success": True})
+
+
+@chat_bp.route('/unarchive/<int:conv_id>', methods=['POST'])
+@login_required
+def unarchive_conversation(conv_id):
+    """Unarchive conversation."""
+    conv = Conversation.query.get_or_404(conv_id)
+    
+    # Check if user is participant
+    participant = ConversationParticipant.query.filter_by(
+        conversation_id=conv_id,
+        user_public_id=current_user.public_id
+    ).first()
+    
+    if not participant:
+        return jsonify({"success": False, "error": "Not a participant"}), 403
+    
+    # Remove from archive list
+    meta = conv.get_meta() or {}
+    if 'archived_by' in meta and current_user.public_id in meta['archived_by']:
+        meta['archived_by'].remove(current_user.public_id)
+    conv.set_meta(meta)
+    
+    db.session.commit()
+    
+    return jsonify({"success": True})
+
+
+@chat_bp.route('/block/<int:conv_id>', methods=['POST'])
+@login_required
+def block_conversation(conv_id):
+    """Block a conversation (for DMs only)."""
+    conv = Conversation.query.get_or_404(conv_id)
+    
+    # Check if user is participant
+    participant = ConversationParticipant.query.filter_by(
+        conversation_id=conv_id,
+        user_public_id=current_user.public_id
+    ).first()
+    
+    if not participant:
+        return jsonify({"success": False, "error": "Not a participant"}), 403
+    
+    # Can only block DMs, not groups
+    meta = conv.get_meta() or {}
+    if meta.get('is_group'):
+        return jsonify({"success": False, "error": "Cannot block group conversations"}), 400
+    
+    # Add to blocked conversations
+    meta['blocked_by'] = meta.get('blocked_by', [])
+    if current_user.public_id not in meta['blocked_by']:
+        meta['blocked_by'].append(current_user.public_id)
+    conv.set_meta(meta)
+    
+    db.session.commit()
+    
+    return jsonify({"success": True})
+
+
+@chat_bp.route('/delete/<int:conv_id>', methods=['DELETE'])
+@login_required
+def delete_conversation(conv_id):
+    """Delete a conversation (removes current user as participant or deletes entire conversation if last participant)."""
+    conv = Conversation.query.get_or_404(conv_id)
+    
+    # Check if user is participant
+    participant = ConversationParticipant.query.filter_by(
+        conversation_id=conv_id,
+        user_public_id=current_user.public_id
+    ).first()
+    
+    if not participant:
+        return jsonify({"success": False, "error": "Not a participant"}), 403
+    
+    # Remove participant
+    db.session.delete(participant)
+    
+    # If no more participants, delete the conversation
+    remaining_participants = ConversationParticipant.query.filter_by(
+        conversation_id=conv_id
+    ).count()
+    
+    if remaining_participants == 0:
+        # Delete all messages
+        Message.query.filter_by(conversation_id=conv_id).delete()
+        # Delete conversation
+        db.session.delete(conv)
+    
+    db.session.commit()
+    
+    return jsonify({"success": True})

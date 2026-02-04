@@ -1,571 +1,641 @@
-document.addEventListener('DOMContentLoaded', () => {
+/**
+ * PRODUCTION-GRADE CHAT APPLICATION
+ * Sender messages on RIGHT, Receiver messages on LEFT
+ */
 
-  /* Element refs */
-  const currentUserId = String(document.getElementById('current-user-id').value);
-  const currentUserRole = document.getElementById('current-user-role').value;
+const ChatApp = {
+  // ===== DOM REFERENCES =====
+  dom: {},
 
-  const convoSearch = document.getElementById('convoSearch');
-  const conversationListEl = document.getElementById('conversationList');
-  const newDMBtn = document.getElementById('newDMBtn');
-  const dmComposerWrapper = document.getElementById('dmComposerWrapper');
-  const dmCancel = document.getElementById('dm_cancel');
-  const dmClassSelect = document.getElementById('dmClassSelect');
-  const dmUserList = document.getElementById('dmUserList');
-  const refreshBtn = document.getElementById('refreshConvos');
-  const newGroupBtn = document.getElementById('newGroupBtn');
-  const groupSettingsModal = document.getElementById('groupSettingsModal');
-  const groupSettingsClose = document.getElementById('groupSettingsClose');
-  const groupRenameBtn = document.getElementById('groupRenameBtn'); // Save button
-  const groupNameInput = document.getElementById('groupNameInput');
-  const groupMemberList = document.getElementById('groupMemberList');
+  // ===== STATE MANAGEMENT =====
+  state: {
+    currentUserId: null,
+    currentUserRole: null,
+    currentConversationId: null,
+    currentConversationType: null,
+    pendingReceiverId: null,
+    conversations: [],
+    messages: {},
+    isGroupChat: false,
+    selectedDMRole: null,
+    replyToMessage: null,
+    searchTerm: '',
+    onlineUsers: new Set(),
+  },
 
-  const messagesEl = document.getElementById('messages');
-  const rightTitle = document.getElementById('rightTitle');
-  const rightSub = document.getElementById('rightSub');
-  const rightAvatar = document.getElementById('rightAvatar');
-  // NEW refs required for the group menu/header
-  const rightActions = document.getElementById('rightActions');
+  socket: null,
 
-  // General menu refs
-  const generalMenuWrapper = document.getElementById('generalMenuWrapper');
-  const menuBtn = document.getElementById('menuBtn');
-  const menuDropdown = document.getElementById('menuDropdown');
-
-  const messageInput = document.getElementById('messageInput');
-  function autoResizeTextarea(el){
-    el.style.height = 'auto';
-    el.style.height = Math.min(el.scrollHeight, 160) + 'px';
-  }
-  messageInput?.addEventListener('input', () => {
-    autoResizeTextarea(messageInput);
-  });
-  const sendDirectBtn = document.getElementById('sendDirect');
-  // Group menu logic
-  const groupMenuWrapper = document.getElementById('groupMenuWrapper');
-  const groupMenuBtn = document.getElementById('groupMenuBtn');
-  const groupMenuDropdown = document.getElementById('groupMenuDropdown');
-
-  const backToConversations = document.getElementById('backToConversations');
-  if (backToConversations) {
-    backToConversations.addEventListener('click', () => {
-      if (window.innerWidth <= 768) {
-        // Reload to check for new messages
-        window.location.reload();
+  // ===== UTILITIES =====
+  util: {
+    safeText: (str) => String(str || '').trim(),
+    formatTime: (iso) => {
+      if (!iso) return '';
+      const d = new Date(iso);
+      return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    },
+    formatDate: (iso) => {
+      if (!iso) return '';
+      const d = new Date(iso);
+      return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+    },
+    getInitials: (name) => {
+      if (!name) return 'U';
+      return name.trim().split(/\s+/).slice(0, 2).map(n => n[0]).join('').toUpperCase();
+    },
+    getUserColor: (userId) => {
+      const colors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4'];
+      let hash = 0;
+      for (let i = 0; i < userId.length; i++) {
+        hash = userId.charCodeAt(i) + ((hash << 5) - hash);
       }
-    });
-  }
+      return colors[Math.abs(hash) % colors.length];
+    },
+  },
 
-  // ============================================
-// ADD THIS FUNCTION TO chat.js
-// Call it from within openConversation() after the conv is opened
-// ============================================
-
-function syncHiddenInputsForCall(conv) {
-  if (!conv) return;
-
-  const convIdInput = document.getElementById('current-conversation-id');
-  const convTypeInput = document.getElementById('current-conversation-type');
-  const convTargetInput = document.getElementById('current-conversation-target');
-
-  if (!convIdInput || !convTypeInput || !convTargetInput) {
-    console.warn('Hidden call inputs not found');
-    return;
-  }
-
-  // Set conversation ID
-  convIdInput.value = conv.id || '';
-
-  // Set conversation type (direct or group)
-  const convType = conv.type === 'group' ? 'group' : 'direct';
-  convTypeInput.value = convType;
-
-  // For DMs, set the target public ID (the other person)
-  let targetPubId = '';
-  if (convType === 'direct') {
-    const other = (conv.participants || []).find(p => String(p.user_public_id) !== currentUserId);
-    targetPubId = other ? other.user_public_id : '';
-  }
-  convTargetInput.value = targetPubId;
-
-  // Dispatch change events so call.js listeners are triggered
-  [convIdInput, convTypeInput, convTargetInput].forEach(input => {
-    input.dispatchEvent(new Event('change', { bubbles: true }));
-    input.dispatchEvent(new Event('input', { bubbles: true }));
-  });
-
-  console.log('✅ Hidden inputs synced for call.js:', { convId: conv.id, convType, targetPubId });
-}
-
-// ============================================
-// NOW FIND THIS IN openConversation() AND ADD THE CALL:
-// ============================================
-// Search for this line in openConversation():
-//   "messagesEl.lastElementChild?.scrollIntoView({ behavior:'smooth', block:'end' });"
-//
-// RIGHT AFTER THAT LINE, ADD:
-//   syncHiddenInputsForCall(conv);
-//
-// FULL CONTEXT (around line 580-590 in your original chat.js):
-// ============================================
-
-  async function openConversation(convId){
-  currentConversationId = convId;
-  pendingReceiverId = pendingReceiverLabel = null;
-  generalMenuWrapper.style.display = 'block';
-  if (dmComposerWrapper) dmComposerWrapper.style.display = 'none';
-
-  const conv = conversationsCache.find(c => c.id === convId) || {};
-  isGroupChat = conv.type === 'group';
-
-  const other = (conv.type === 'direct')
-    ? (conv.participants || []).find(p => String(p.user_public_id) !== currentUserId) || {}
-    : (conv.participants || [])[0] || {};
-
-  try {
-    const res = await fetch(`/chat/conversations/${convId}/messages`);
-    if (!res.ok) {
-      messagesEl.innerHTML = `<div class="no-conversations" style="padding:12px;">Could not open conversation</div>`;
-      return;
-    }
-    const msgs = await res.json();
-    if (!Array.isArray(msgs)) {
-      messagesEl.innerHTML = `<div class="no-conversations" style="padding:12px;">Unexpected response</div>`;
-      return;
-    }
-
-    messagesEl.innerHTML = '';
-
-    // ... [rest of message rendering code] ...
-
-    messagesEl.lastElementChild?.scrollIntoView({ behavior:'smooth', block:'end' });
-
-    const opened = conversationsCache.find(c => c.id === convId);
-    if (opened) opened.unread_count = 0;
-    await markConversationAsRead(convId);
-    syncHiddenInputsForCall(conv);
-    await loadConversations();
-  } catch (err) {
-    console.error('openConversation', err);
-    messagesEl.innerHTML = `<div class="no-conversations" style="padding:12px;">Network error</div>`;
-  }
-}
-
-async function markConversationRead(conversationId) {
+  // ===== INITIALIZATION =====
+  init() {
+    console.log('🚀 ChatApp Initializing');
     try {
-        await fetch('/chat/mark_read', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRFToken': document.querySelector('meta[name="csrf-token"]')?.content
-            },
-            body: JSON.stringify({
-                conversation_id: conversationId
-            })
-        });
-    } catch (e) {
-        console.warn('Failed to mark conversation read');
-    }
-}
-
-  /* ============================
-   Load DM classes from backend
-   ============================ */
-  async function loadDMClasses() {
-    if (!dmClassSelect) return;
-    dmClassSelect.innerHTML = '<option value="">Loading classes…</option>';
-
-    try {
-      const res = await fetch('/chat/classes');
-      const data = await res.json();
-
-      if (!Array.isArray(data) || data.length === 0) {
-        dmClassSelect.innerHTML = '<option value="">No classes available</option>';
-        return;
-      }
-
-      dmClassSelect.innerHTML = '<option value="">Select a class</option>';
-      data.forEach(c => {
-        const opt = document.createElement('option');
-        opt.value = c.id;
-        opt.textContent = c.name;
-        dmClassSelect.appendChild(opt);
-      });
+      this.cacheDOM();
+      this.state.currentUserId = this.dom.currentUserId;
+      this.state.currentUserRole = this.dom.currentUserRole;
+      this.setupSocket();
+      this.setupEventListeners();
+      this.setupMessageSearch();
+      this.setupGroupSettings();
+      this.loadConversations();
+      console.log('✅ ChatApp Ready');
     } catch (err) {
-      console.error('loadDMClasses', err);
-      dmClassSelect.innerHTML = '<option value="">Error loading classes</option>';
+      console.error('❌ Init failed:', err);
+      this.showError('Failed to initialize chat');
     }
-  }
+  },
 
-  async function loadDMUsers({ role, class_id } = {}) {
-  if (!dmUserList) return;
-  dmUserList.innerHTML = 'Loading users…';
+  cacheDOM() {
+    this.dom = {
+      currentUserId: document.getElementById('current-user-id').value,
+      currentUserRole: document.getElementById('current-user-role').value,
+      conversationList: document.getElementById('conversationList'),
+      newDMBtn: document.getElementById('newDMBtn'),
+      newGroupBtn: document.getElementById('newGroupBtn'),
+      refreshBtn: document.getElementById('refreshConvos'),
+      convoSearch: document.getElementById('convoSearch'),
+      dmComposerWrapper: document.getElementById('dmComposerWrapper'),
+      dmCancelBtn: document.getElementById('dm_cancel'),
+      rightTitle: document.getElementById('rightTitle'),
+      rightSub: document.getElementById('rightSub'),
+      rightAvatar: document.getElementById('rightAvatar'),
+      messagesContainer: document.getElementById('messages'),
+      messageInput: document.getElementById('messageInput'),
+      sendBtn: document.getElementById('sendDirect'),
+      backBtn: document.getElementById('backToConversations'),
+      menuBtn: document.getElementById('menuBtn'),
+      menuDropdown: document.getElementById('menuDropdown'),
+      msgContextMenu: document.getElementById('msgContextMenu'),
+      msgActionModal: document.getElementById('msgActionModal'),
+      modalConfirm: document.getElementById('modalConfirm'),
+      modalCancel: document.getElementById('modalCancel'),
+      groupSettingsModal: document.getElementById('groupSettingsModal'),
+      replyDiv: document.getElementById('replyDiv'),
+    };
+  },
 
-  try {
-    let url = `/chat/users?role=${role}`;
-    if (class_id) url += `&class_id=${class_id}`;
+  // ===== SOCKET.IO =====
+  setupSocket() {
+    this.socket = io();
 
-    const res = await fetch(url);
-    const users = await res.json();
+    this.socket.on('connect', () => {
+      console.log('✅ Socket connected');
+      this.socket.emit('join', { user_id: this.state.currentUserId });
+    });
 
-    if (!Array.isArray(users) || users.length === 0) {
-      dmUserList.innerHTML = 'No users found';
+    this.socket.on('new_message', (data) => {
+      if (data.conversation_id === this.state.currentConversationId) {
+        this.appendMessage(data.message);
+      }
+      this.loadConversations();
+    });
+
+    this.socket.on('presence_update', (data) => {
+      if (data.status === 'online') {
+        this.state.onlineUsers.add(data.user_public_id);
+      } else {
+        this.state.onlineUsers.delete(data.user_public_id);
+      }
+      this.updatePresenceIndicator();
+    });
+
+    this.socket.on('message_edited', (data) => {
+      if (data.conversation_id === this.state.currentConversationId) {
+        this.updateMessageInUI(data.message);
+      }
+    });
+
+    this.socket.on('message_deleted', (data) => {
+      if (data.conversation_id === this.state.currentConversationId) {
+        this.removeMessageFromUI(data.message_id);
+      }
+    });
+
+    this.socket.on('reaction_added', (data) => {
+      this.addReactionToUI(data.message_id, data.reaction);
+    });
+
+    this.socket.on('reaction_removed', (data) => {
+      this.removeReactionFromUI(data.message_id, data.user_public_id, data.emoji);
+    });
+
+    this.socket.on('disconnect', () => {
+      console.warn('⚠️ Socket disconnected');
+    });
+  },
+
+  // ===== EVENT LISTENERS =====
+  setupEventListeners() {
+    // Buttons
+    this.dom.newDMBtn.addEventListener('click', () => this.openDMComposer());
+    this.dom.newGroupBtn.addEventListener('click', () => this.openGroupCreator());
+    this.dom.refreshBtn.addEventListener('click', () => this.loadConversations());
+    this.dom.dmCancelBtn.addEventListener('click', () => this.closeDMComposer());
+
+    // Messages
+    this.dom.sendBtn.addEventListener('click', () => this.sendMessage());
+    this.dom.messageInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        this.sendMessage();
+      }
+    });
+
+    // Auto-resize textarea
+    this.dom.messageInput.addEventListener('input', () => {
+      this.dom.messageInput.style.height = 'auto';
+      this.dom.messageInput.style.height = Math.min(this.dom.messageInput.scrollHeight, 160) + 'px';
+    });
+
+    // Back button
+    if (this.dom.backBtn) {
+      this.dom.backBtn.addEventListener('click', () => this.closeConversation());
+    }
+
+    // Menu
+    this.dom.menuBtn?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const visible = this.dom.menuDropdown.style.display === 'block';
+      this.dom.menuDropdown.style.display = visible ? 'none' : 'block';
+    });
+
+    // Menu actions
+    this.dom.menuDropdown?.querySelectorAll('button').forEach(btn => {
+      btn.addEventListener('click', () => {
+        this.handleMenuAction(btn.dataset.action);
+        this.dom.menuDropdown.style.display = 'none';
+      });
+    });
+
+    // Search
+    if (this.dom.convoSearch) {
+      this.dom.convoSearch.addEventListener('input', (e) => {
+        this.state.searchTerm = e.target.value.toLowerCase();
+        this.renderConversationList();
+      });
+    }
+
+    // DM roles
+    document.querySelectorAll('.dm-role-btn').forEach(btn => {
+      btn.addEventListener('click', () => this.selectDMRole(btn.dataset.role));
+    });
+
+    // Close menus on outside click
+    document.addEventListener('click', () => {
+      this.dom.menuDropdown.style.display = 'none';
+      this.dom.msgContextMenu.style.display = 'none';
+    });
+
+    // Modal cancel
+    this.dom.modalCancel?.addEventListener('click', () => {
+      this.dom.msgActionModal.style.display = 'none';
+    });
+
+    // Message search close
+    document.getElementById('closeMessageSearch')?.addEventListener('click', () => {
+      document.getElementById('messageSearchBar').style.display = 'none';
+      document.getElementById('messageSearchInput').value = '';
+      this.filterMessages('');
+    });
+
+    // Group settings modal close
+    document.getElementById('groupSettingsModal')?.addEventListener('click', (e) => {
+      if (e.target.id === 'groupSettingsModal') {
+        document.getElementById('groupSettingsModal').style.display = 'none';
+      }
+    });
+  },
+
+  // ===== CONVERSATIONS =====
+  async loadConversations() {
+    try {
+      const res = await fetch('/chat/conversations');
+      if (!res.ok) throw new Error('Failed to load');
+      this.state.conversations = await res.json();
+      this.renderConversationList();
+      console.log('✅ Loaded', this.state.conversations.length, 'conversations');
+    } catch (err) {
+      console.error('❌ loadConversations:', err);
+      this.showError('Failed to load conversations');
+    }
+  },
+
+  renderConversationList() {
+    const list = this.dom.conversationList;
+    list.innerHTML = '';
+
+    let convs = this.state.conversations;
+
+    // Filter
+    if (this.state.searchTerm) {
+      convs = convs.filter(c => {
+        const name = (c.name || '').toLowerCase();
+        const preview = (c.last_message?.content || '').toLowerCase();
+        return name.includes(this.state.searchTerm) || preview.includes(this.state.searchTerm);
+      });
+    }
+
+    // Sort
+    convs.sort((a, b) => {
+      const au = a.unread_count || 0;
+      const bu = b.unread_count || 0;
+      if (au !== bu) return bu - au;
+      return new Date(b.updated_at || 0) - new Date(a.updated_at || 0);
+    });
+
+    if (convs.length === 0) {
+      list.innerHTML = '<div class="no-conversations">No conversations</div>';
       return;
     }
 
-    dmUserList.innerHTML = '';
-    users.forEach(u => {
-      const btn = document.createElement('button');
-      btn.textContent = u.name;
-      btn.className = 'dm-user-btn';
-      btn.addEventListener('click', () => openDM(u.id, u.name));
-      dmUserList.appendChild(btn);
+    convs.forEach(conv => {
+      const item = document.createElement('div');
+      item.className = 'conv-item' + (conv.id === this.state.currentConversationId ? ' active' : '');
+      item.dataset.conversationId = conv.id;
+
+      const other = conv.type === 'direct'
+        ? conv.participants.find(p => p.user_public_id !== this.state.currentUserId) || conv.participants[0]
+        : conv.participants[0];
+
+      // Avatar
+      const avatar = document.createElement('div');
+      avatar.className = 'conv-avatar';
+      avatar.style.background = this.util.getUserColor(other?.user_public_id || '');
+      if (conv.type === 'group') {
+        avatar.textContent = conv.participants?.length || '0';
+        avatar.style.background = '#0ea5e9';
+      } else {
+        avatar.textContent = this.util.getInitials(other?.name);
+      }
+      item.appendChild(avatar);
+
+      // Content
+      const content = document.createElement('div');
+      content.className = 'conv-content';
+
+      const title = document.createElement('div');
+      title.className = 'conv-title';
+      title.textContent = (conv.type === 'group' ? '👥 ' : '') + (conv.name || other?.name || 'Chat');
+      content.appendChild(title);
+
+      const preview = document.createElement('div');
+      preview.className = 'conv-preview';
+      if (conv.last_message) {
+        const text = conv.last_message.content || '';
+        preview.textContent = text.slice(0, 50) + (text.length > 50 ? '...' : '');
+      } else {
+        preview.textContent = 'No messages';
+        preview.style.color = '#999';
+      }
+      content.appendChild(preview);
+
+      item.appendChild(content);
+
+      // Unread badge
+      if (conv.unread_count && conv.unread_count > 0) {
+        const badge = document.createElement('span');
+        badge.className = 'badge';
+        badge.textContent = conv.unread_count;
+        item.appendChild(badge);
+      }
+
+      item.addEventListener('click', () => this.openConversation(conv.id));
+      
+      // Mobile: Long-press touch support for conversation
+      let touchStartTime = 0;
+      let touchStartX = 0;
+      let touchStartY = 0;
+      const LONG_PRESS_DURATION = 500;
+
+      item.addEventListener('touchstart', (e) => {
+        touchStartTime = Date.now();
+        touchStartX = e.touches[0].clientX;
+        touchStartY = e.touches[0].clientY;
+      }, false);
+
+      item.addEventListener('touchend', (e) => {
+        const duration = Date.now() - touchStartTime;
+        const distX = Math.abs(e.changedTouches[0].clientX - touchStartX);
+        const distY = Math.abs(e.changedTouches[0].clientY - touchStartY);
+        const movedTooMuch = distX > 10 || distY > 10;
+
+        if (duration > LONG_PRESS_DURATION && !movedTooMuch) {
+          e.preventDefault();
+          e.stopPropagation();
+          // Show conversation context menu
+          const menu = document.getElementById('convContextMenu');
+          menu.style.display = 'block';
+          menu.style.left = touchStartX + 'px';
+          menu.style.top = touchStartY + 'px';
+          window.currentContextConvo = item;
+        }
+        touchStartTime = 0;
+      }, false);
+      
+      list.appendChild(item);
     });
+  },
 
-  } catch (err) {
-    console.error('loadDMUsers', err);
-    dmUserList.innerHTML = 'Error loading users';
-  }
-}
+  async openConversation(convId) {
+    try {
+      this.state.currentConversationId = convId;
+      this.state.pendingReceiverId = null;
 
-  //groupMenuBtn?.addEventListener('click', e => {
-  //  e.stopPropagation();
-  //  const isVisible = groupMenuDropdown.style.display === 'block';
-  //  groupMenuDropdown.style.display = isVisible ? 'none' : 'block';
-  //});
+      const conv = this.state.conversations.find(c => c.id === convId);
+      if (!conv) throw new Error('Conversation not found');
 
-  // Toggle general menu (3-dot)
-  menuBtn?.addEventListener('click', e => {
-    e.stopPropagation();
-    if (!menuDropdown) return;
-    const isVisible = menuDropdown.style.display === 'block';
-    menuDropdown.style.display = isVisible ? 'none' : 'block';
-    menuBtn.setAttribute('aria-expanded', (!isVisible).toString());
-  });
+      this.state.currentConversationType = conv.type;
+      this.state.isGroupChat = conv.type === 'group';
 
-  // Hide both dropdowns when clicking outside — safe checks
-  document.addEventListener('click', () => {
-    if (groupMenuDropdown) groupMenuDropdown.style.display = 'none';
-    if (menuDropdown) {
-      menuDropdown.style.display = 'none';
-      menuBtn?.setAttribute('aria-expanded', 'false');
+      // Load messages
+      const res = await fetch(`/chat/conversations/${convId}/messages`);
+      if (!res.ok) throw new Error('Failed to load messages');
+      const msgs = await res.json();
+      this.state.messages[convId] = msgs;
+
+      // Render
+      this.renderMessages(msgs);
+      
+      // Update header with error handling
+      try {
+        this.updateConversationHeader(conv);
+      } catch (headerErr) {
+        console.warn('Header update error (non-critical):', headerErr);
+      }
+      
+      this.markAsRead(convId);
+      this.renderConversationList();
+      this.dom.dmComposerWrapper.style.display = 'none';
+      
+      // Sync call inputs with error handling
+      try {
+        this.syncCallInputs(conv);
+      } catch (syncErr) {
+        console.warn('Call input sync error (non-critical):', syncErr);
+      }
+
+      console.log('✅ Opened conversation', convId);
+    } catch (err) {
+      console.error('❌ openConversation:', err);
+      // Only show error if we actually failed to load
+      if (err.message.includes('Failed to load') || err.message.includes('not found')) {
+        this.showError('Failed to open conversation: ' + err.message);
+      }
     }
-  });
+  },
 
-    // menu actions (safe)
-    messagesEl.addEventListener('click', e => {
-      const replyBox = e.target.closest('.reply-link');
-      if (!replyBox) return;
+  closeConversation() {
+    this.state.currentConversationId = null;
+    this.dom.messagesContainer.innerHTML = '';
+    this.dom.rightTitle.textContent = 'Select conversation';
+    this.dom.rightSub.textContent = 'Open a chat to start';
+  },
 
-      const targetId = replyBox.dataset.replyId;
-      if (!targetId) return;
+  updateConversationHeader(conv) {
+    const other = conv.type === 'direct'
+      ? conv.participants.find(p => p.user_public_id !== this.state.currentUserId) || conv.participants[0]
+      : null;
 
-      const targetMsg = messagesEl.querySelector(
-        `.msg[data-msg-id="${targetId}"]`
-      );
-
-      if (!targetMsg) return;
-
-      targetMsg.scrollIntoView({ behavior: 'smooth', block: 'center' });
-
-      // 🔦 highlight effect
-      targetMsg.classList.add('reply-highlight');
-      setTimeout(() => targetMsg.classList.remove('reply-highlight'), 1200);
-    });
-
-    menuDropdown?.querySelectorAll('button').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      const action = btn.dataset.action;
-      if (action === 'search') {
-        convoSearch?.focus();
-      } else if (action === 'mute') {
-        alert('Mute notifications - feature not implemented yet');
-      } else if (action === 'clear_chat') {
-        if (!currentConversationId) return alert('No open conversation to clear.');
-        if (confirm('Are you sure you want to clear this chat?')) {
-          const csrf = document.querySelector('meta[name="csrf-token"]')?.content || '';
-          try {
-            await fetch(`/chat/conversations/${encodeURIComponent(currentConversationId)}/clear`, {
-              method: 'POST',
-              headers: { 'X-CSRFToken': csrf, 'Content-Type': 'application/json' }
-            });
-            // reload messages
-            await openConversation(currentConversationId);
-          } catch (err) {
-            console.error('clear chat', err);
-            alert('Error clearing chat');
-          }
-        }
-      }
-      // hide dropdown afterwards
-      if (menuDropdown) menuDropdown.style.display = 'none';
-      menuBtn?.setAttribute('aria-expanded', 'false');
-    });
-  });
-
-  // 3-dot menu actions
-  menuDropdown.querySelectorAll('button').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      const action = btn.dataset.action;
-      if(action === 'search') {
-        convoSearch?.focus();
-      } else if(action === 'add_members') {
-        // Open add participants modal for the current group
-        groupSettingsModal.dataset.mode = 'add_members';
-        groupSettingsModal.style.display = 'flex';
-        groupNameInput.style.display = 'none';
-        document.querySelector('#groupSettingsModal h5').textContent = 'Add Members';
-        groupRenameBtn.textContent = 'Add Members';
-
-        // Load users not in the group
-        groupMemberList.innerHTML = 'Loading users…';
-        const conv = conversationsCache.find(c => c.id === currentConversationId);
-        const currentMembers = new Set((conv.participants || []).map(p => p.user_public_id));
-
-        try {
-          const roles = ['student', 'teacher', 'parent', 'admin'];
-          const users = [];
-          for (const role of roles) {
-            const res = await fetch(`/chat/users?role=${role}`);
-            const data = await res.json();
-            data.forEach(u => {
-              if (!currentMembers.has(String(u.id))) {
-                users.push({ ...u, role });
-              }
-            });
-          }
-
-          groupMemberList.innerHTML = '';
-          if (users.length === 0) {
-            groupMemberList.innerHTML = 'No additional users available';
-            return;
-          }
-
-          users.forEach(u => {
-            const item = document.createElement('div');
-            item.style.display = 'flex';
-            item.style.alignItems = 'center';
-            item.style.gap = '6px';
-
-            item.innerHTML = `
-              <input type="checkbox" value="${u.id}" id="user-${u.id}">
-              <label for="user-${u.id}">${u.name} (${u.role})</label>
-            `;
-
-            const checkbox = item.querySelector('input');
-            checkbox.addEventListener('change', e => {
-              if (e.target.checked) {
-                groupMembers.push(u.id);
-              } else {
-                groupMembers = groupMembers.filter(id => id !== u.id);
-              }
-            });
-
-            groupMemberList.appendChild(item);
-          });
-        } catch (err) {
-          console.error(err);
-          groupMemberList.innerHTML = 'Error loading users';
-        }
-      } else if(action === 'mute') {
-        alert('Mute notifications - feature not implemented yet');
-      } else if(action === 'clear_chat') {
-        if(confirm('Are you sure you want to clear this chat?')) {
-          const csrf = document.querySelector('meta[name="csrf-token"]').content;
-          try {
-            await fetch(`/chat/conversations/${currentConversationId}/clear`, {
-              method: 'POST',
-              headers: { 'X-CSRFToken': csrf }
-            });
-            openConversation(currentConversationId);
-          } catch(err) {
-            alert('Error clearing chat');
-          }
-        }
-      }
-      menuDropdown.style.display = 'none';
-    });
-  });
-
-  // Show menu only for groups
-  function toggleGroupMenu(conv) {
-      const isGroup = conv?.type === 'group';
-      if (groupMenuWrapper) groupMenuWrapper.style.display = isGroup ? 'flex' : 'none';
-      if (rightActions) rightActions.style.display = isGroup ? 'flex' : 'none';
-  }
-
-  /* Local state */
-  let currentConversationId = null;
-  let pendingReceiverId = null;
-  let pendingReceiverLabel = null;
-  let conversationsCache = [];
-  let participantNameMap = {};
-  let typingTimeout = null;
-  let replyToMessage = null;
-  let isGroupChat = false;
-  let selectedDMRole = null;
-
-/* ============================
-   DM STEP VISIBILITY CONTROLLER
-   ============================ */
-function showDMStep(stepId) {
-  const steps = ['dmStepRole', 'dmStepClass', 'dmStepUsers'];
-  steps.forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.style.display = (id === stepId) ? 'block' : 'none';
-  });
-}
-
-document.querySelectorAll('.dm-role-btn').forEach(btn => {
-  btn.addEventListener('click', () => {
-    selectedDMRole = btn.dataset.role;
-    dmUserList.innerHTML = '';
-
-    // Teachers go straight to users
-    if (selectedDMRole === 'teacher') {
-      showDMStep('dmStepUsers');
-      loadDMUsers({ role: selectedDMRole });
+    if (conv.type === 'group') {
+      this.dom.rightTitle.textContent = '👥 ' + (conv.name || 'Group');
+      this.dom.rightSub.textContent = (conv.participants?.length || 0) + ' members';
+      this.dom.rightAvatar.style.background = '#0ea5e9';
+      this.dom.rightAvatar.textContent = conv.participants?.length || '0';
     } else {
-      showDMStep('dmStepClass');
-      loadDMClasses(); // <-- FETCH CLASSES HERE
+      this.dom.rightTitle.textContent = other?.name || 'Unknown';
+      const online = this.state.onlineUsers.has(other?.user_public_id);
+      this.dom.rightSub.textContent = online ? '🟢 Online' : '⚫ Offline';
+      this.dom.rightAvatar.textContent = this.util.getInitials(other?.name);
+      this.dom.rightAvatar.style.background = this.util.getUserColor(other?.user_public_id || '');
     }
-  });
-});
+  },
 
-document.getElementById('dmClassSelect')?.addEventListener('change', function () {
-  if (!this.value || !selectedDMRole) return;
+  syncCallInputs(conv) {
+    const idInput = document.getElementById('current-conversation-id');
+    const typeInput = document.getElementById('current-conversation-type');
+    const targetInput = document.getElementById('current-conversation-target');
 
-  showDMStep('dmStepUsers');
-  loadDMUsers({
-    role: selectedDMRole,
-    class_id: this.value
-  });
-});
+    if (!idInput || !typeInput || !targetInput) return;
 
-document.getElementById('conversationList')?.addEventListener('click', async (e) => {
-    const convItem = e.target.closest('.conv-item');
-    if (!convItem) return;
+    idInput.value = conv.id;
+    typeInput.value = conv.type === 'group' ? 'group' : 'direct';
 
-    const convId = convItem.dataset.conversationId;
-
-    // ✅ MARK AS READ
-    markConversationRead(convId);
-
-    // optional: fetch messages for context (but don't auto-trigger call UI)
-    // try {
-    //     const res = await fetch(`/chat/conversations/${convId}/messages`);
-    //     const messages = await res.json();
-    //     syncCallContextFromConversation(convItem, messages);
-    // } catch (e) {}
-});
-
-// ============================================
-// REPLACE THIS ENTIRE BLOCK IN chat.js:
-// ============================================
-
-// Call button event listener is now handled in call.js
-// document.getElementById('startCallBtn')?.addEventListener('click', async function() {
-//     const convId = document.getElementById('current-conversation-id').value;
-//     const targetPubId = document.getElementById('current-conversation-target').value;
-//     const convType = document.getElementById('current-conversation-type').value;
-
-//     if (!convId) {
-//         return alert("Select a conversation first");
-//     }
-
-//     if (convType === 'group') {
-//         return alert('Group calls are not supported yet');
-//     }
-
-//     if (!targetPubId) {
-//         return alert('Cannot initiate call - target user not found');
-//     }
-
-//     // Get the target name from the active conversation
-//     const activeConv = document.querySelector('.conv-item.active');
-//     const targetName = activeConv?.querySelector('.conv-title')?.innerText || 'Unknown';
-
-//     console.log('📞 Starting call to:', { targetName, targetPubId, convId });
-
-//     // Call the function from call.js (which is already loaded)
-//     if (typeof startOutgoingCallUI === 'function') {
-//         await startOutgoingCallUI(targetName, targetPubId, convId);
-//     } else {
-//         alert('Call system not ready. Please refresh the page.');
-//         console.error('startOutgoingCallUI function not found. Is call.js loaded?');
-//     }
-// });
-
-const msgMenu = document.getElementById('msgContextMenu');
-
-// Right-click handler
-document.getElementById('messages').addEventListener('contextmenu', function(e){
-    const msgEl = e.target.closest('.msg-item'); // <- your message element class
-    if(msgEl){
-        e.preventDefault();
-        msgMenu.style.top = e.pageY + 'px';
-        msgMenu.style.left = e.pageX + 'px';
-        msgMenu.style.display = 'block';
-
-        // store the message id on menu for actions
-        msgMenu.dataset.msgId = msgEl.dataset.msgId;
+    if (conv.type === 'direct') {
+      const other = conv.participants.find(p => p.user_public_id !== this.state.currentUserId);
+      targetInput.value = other?.user_public_id || '';
     }
-});
 
-// Hide menu on click elsewhere
-document.addEventListener('click', function(){
-    msgMenu.style.display = 'none';
-});
+    [idInput, typeInput, targetInput].forEach(input => {
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+  },
 
-  /* Utilities */
-  const safeText = s => String(s || '');
-  const fmtTime = iso => iso ? new Date(iso).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '';
-  const fmtDate = iso => {
-    if(!iso) return '';
-    const d = new Date(iso);
-    return d.toLocaleDateString([], {month:'short', day:'numeric', year: d.getFullYear()===new Date().getFullYear() ? undefined : 'numeric'});
-  };
-  const initialsFromName = name => {
-    if(!name) return 'U';
-    return name.trim().split(/\s+/).map(n => n[0]||'').join('').slice(0,2).toUpperCase();
-  };
+  // ===== MESSAGES =====
+  renderMessages(messages) {
+    const container = this.dom.messagesContainer;
+    container.innerHTML = '';
 
-  function getUserColor(userId) {
-    // Generate a consistent color based on user ID
-    const colors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#84cc16', '#f97316'];
-    let hash = 0;
-    for (let i = 0; i < userId.length; i++) {
-      hash = userId.charCodeAt(i) + ((hash << 5) - hash);
+    if (!messages || messages.length === 0) {
+      container.innerHTML = '<div class="no-messages">No messages yet</div>';
+      return;
     }
-    return colors[Math.abs(hash) % colors.length];
-  }
 
-  function setReplyTo(msg) {
-    replyToMessage = msg;
-    updateReplyUI();
-  }
+    // Group by day
+    const byDay = {};
+    messages.forEach(msg => {
+      const key = new Date(msg.created_at).toDateString();
+      if (!byDay[key]) byDay[key] = [];
+      byDay[key].push(msg);
+    });
 
-  function updateReplyUI() {
-    const replyDiv = document.getElementById('replyDiv');
-    if (replyToMessage) {
-      const replyColor = getUserColor(replyToMessage.sender_public_id || replyToMessage.sender_id || '');
-      replyDiv.innerHTML = `<div class="reply-quote" style="border-left-color: ${replyColor};">
-        <div class="reply-sender" style="color: ${replyColor};">${replyToMessage.sender_name}</div>
-        <div class="reply-content">${safeText(replyToMessage.content).slice(0,50)}${replyToMessage.content.length > 50 ? '...' : ''}</div>
-      </div><button id="cancelReply" title="Cancel reply">×</button>`;
-      replyDiv.style.display = 'flex';
-      document.getElementById('cancelReply').addEventListener('click', () => {
-        replyToMessage = null;
-        updateReplyUI();
+    // Render
+    Object.keys(byDay).sort().forEach(day => {
+      const sep = document.createElement('div');
+      sep.className = 'date-separator';
+      sep.style.textAlign = 'center';
+      sep.style.fontSize = '12px';
+      sep.style.color = '#999';
+      sep.style.margin = '15px 0';
+      sep.textContent = this.util.formatDate(byDay[day][0].created_at);
+      container.appendChild(sep);
+
+      byDay[day].forEach(msg => {
+        const el = this.createMessageElement(msg);
+        container.appendChild(el);
       });
-    } else {
-      replyDiv.style.display = 'none';
+    });
+
+    container.scrollTop = container.scrollHeight;
+  },
+
+  createMessageElement(msg) {
+    const isMine = msg.sender_public_id === this.state.currentUserId;
+    
+    // Message wrapper - handles alignment
+    const wrapper = document.createElement('div');
+    wrapper.className = 'message-item';
+    wrapper.style.display = 'flex';
+    wrapper.style.justifyContent = isMine ? 'flex-end' : 'flex-start';
+    wrapper.style.marginBottom = '10px';
+    wrapper.style.paddingX = '10px';
+    wrapper.dataset.messageId = msg.id;
+
+    // Message bubble
+    const bubble = document.createElement('div');
+    bubble.style.maxWidth = '70%';
+    bubble.style.wordWrap = 'break-word';
+    bubble.style.padding = '10px 12px';
+    bubble.style.borderRadius = '8px';
+    bubble.style.background = isMine ? '#4CAF50' : '#f0f0f0';
+    bubble.style.color = isMine ? 'white' : '#333';
+
+    // Sender name (group only)
+    if (!isMine && this.state.isGroupChat) {
+      const name = document.createElement('div');
+      name.textContent = msg.sender_name || 'Unknown';
+      name.style.fontSize = '12px';
+      name.style.fontWeight = '600';
+      name.style.marginBottom = '4px';
+      name.style.color = this.util.getUserColor(msg.sender_public_id);
+      bubble.appendChild(name);
     }
-  }
 
-  function renderReactions(el, reactions) {
-    el.innerHTML = '';
-    if (reactions.length === 0) return;
+    // Reply quote
+    if (msg.reply_to) {
+      const quote = document.createElement('div');
+      quote.style.borderLeftColor = this.util.getUserColor(msg.reply_to.sender_public_id);
+      quote.style.borderLeftWidth = '3px';
+      quote.style.borderLeftStyle = 'solid';
+      quote.style.paddingLeft = '8px';
+      quote.style.marginBottom = '8px';
+      quote.style.fontSize = '12px';
+      quote.style.opacity = '0.8';
+      quote.innerHTML = `
+        <strong style="color: ${this.util.getUserColor(msg.reply_to.sender_public_id)};">
+          ${msg.reply_to.sender_name}
+        </strong>
+        <div>${this.util.safeText(msg.reply_to.content).slice(0, 60)}</div>
+      `;
+      bubble.appendChild(quote);
+    }
 
+    // Content
+    const content = document.createElement('div');
+    content.textContent = this.util.safeText(msg.content);
+    content.style.fontSize = '14px';
+    content.style.marginTop = '4px';
+    bubble.appendChild(content);
+
+    // Time
+    const time = document.createElement('div');
+    time.style.fontSize = '11px';
+    time.style.opacity = '0.7';
+    time.style.marginTop = '4px';
+    time.textContent = this.util.formatTime(msg.created_at) + (msg.edited_at ? ' (edited)' : '');
+    bubble.appendChild(time);
+
+    wrapper.appendChild(bubble);
+
+    // Reactions
+    if (msg.reactions && msg.reactions.length > 0) {
+      const reactDiv = document.createElement('div');
+      reactDiv.className = 'message-reactions';
+      reactDiv.style.display = 'flex';
+      reactDiv.style.gap = '4px';
+      reactDiv.style.marginTop = '6px';
+      reactDiv.style.flexWrap = 'wrap';
+      this.renderReactions(reactDiv, msg.reactions);
+      wrapper.appendChild(reactDiv);
+    }
+
+    // Desktop: Context menu on right-click
+    wrapper.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      this.showMessageMenu(e, msg);
+    });
+
+    // Mobile: Long-press touch support
+    let touchStartTime = 0;
+    let touchStartX = 0;
+    let touchStartY = 0;
+    const LONG_PRESS_DURATION = 500;
+
+    wrapper.addEventListener('touchstart', (e) => {
+      touchStartTime = Date.now();
+      touchStartX = e.touches[0].clientX;
+      touchStartY = e.touches[0].clientY;
+    }, false);
+
+    wrapper.addEventListener('touchend', (e) => {
+      const duration = Date.now() - touchStartTime;
+      const distX = Math.abs(e.changedTouches[0].clientX - touchStartX);
+      const distY = Math.abs(e.changedTouches[0].clientY - touchStartY);
+      const movedTooMuch = distX > 10 || distY > 10;
+
+      if (duration > LONG_PRESS_DURATION && !movedTooMuch) {
+        e.preventDefault();
+        // Create synthetic event for showMessageMenu
+        const evt = {
+          pageX: touchStartX,
+          clientX: touchStartX,
+          pageY: touchStartY,
+          clientY: touchStartY
+        };
+        this.showMessageMenu(evt, msg);
+      }
+      touchStartTime = 0;
+    }, false);
+
+    return wrapper;
+  },
+
+  appendMessage(msg) {
+    if (msg.conversation_id !== this.state.currentConversationId) return;
+    const container = this.dom.messagesContainer;
+    if (container.querySelector('.no-messages')) container.innerHTML = '';
+    const el = this.createMessageElement(msg);
+    container.appendChild(el);
+    container.scrollTop = container.scrollHeight;
+  },
+
+  updateMessageInUI(msg) {
+    const el = document.querySelector(`[data-message-id="${msg.id}"]`);
+    if (el) el.replaceWith(this.createMessageElement(msg));
+  },
+
+  removeMessageFromUI(msgId) {
+    const el = document.querySelector(`[data-message-id="${msgId}"]`);
+    if (el) el.remove();
+  },
+
+  renderReactions(container, reactions) {
+    container.innerHTML = '';
     const grouped = {};
     reactions.forEach(r => {
       if (!grouped[r.emoji]) grouped[r.emoji] = [];
@@ -573,1021 +643,733 @@ document.addEventListener('click', function(){
     });
 
     Object.keys(grouped).forEach(emoji => {
-      const count = grouped[emoji].length;
-      const hasMine = grouped[emoji].some(r => r.user_public_id === currentUserId);
       const btn = document.createElement('button');
-      btn.className = 'reaction-btn' + (hasMine ? ' mine' : '');
-      btn.textContent = `${emoji} ${count}`;
-      btn.addEventListener('click', () => toggleReaction(el.dataset.msgId, emoji, hasMine));
-      el.appendChild(btn);
+      btn.className = 'reaction-btn';
+      btn.style.background = '#fff';
+      btn.style.border = '1px solid #ddd';
+      btn.style.padding = '3px 6px';
+      btn.style.borderRadius = '12px';
+      btn.style.fontSize = '11px';
+      btn.style.cursor = 'pointer';
+      btn.style.transition = 'all 0.2s';
+      const hasMine = grouped[emoji].some(r => r.user_public_id === this.state.currentUserId);
+      if (hasMine) {
+        btn.style.borderColor = '#4CAF50';
+        btn.style.background = '#e8f5e9';
+      }
+      btn.textContent = emoji + ' ' + grouped[emoji].length;
+      btn.addEventListener('click', () => {
+        const msgId = container.closest('[data-message-id]').dataset.messageId;
+        this.toggleReaction(msgId, emoji, hasMine);
+      });
+      container.appendChild(btn);
     });
-  }
+  },
 
-  async function toggleReaction(msgId, emoji, hasMine) {
-    if (!currentConversationId) return alert('No active conversation');
+  addReactionToUI(msgId, reaction) {
+    const el = document.querySelector(`[data-message-id="${msgId}"]`);
+    if (!el) return;
+    let div = el.querySelector('.message-reactions');
+    if (!div) {
+      div = document.createElement('div');
+      div.className = 'message-reactions';
+      div.style.display = 'flex';
+      div.style.gap = '4px';
+      div.style.marginTop = '6px';
+      div.style.flexWrap = 'wrap';
+      el.appendChild(div);
+    }
+    this.renderReactions(div, [reaction]);
+  },
+
+  removeReactionFromUI(msgId, userPubId, emoji) {
+    const el = document.querySelector(`[data-message-id="${msgId}"]`);
+    if (!el) return;
+    const div = el.querySelector('.message-reactions');
+    if (!div) return;
+    const btns = Array.from(div.querySelectorAll('.reaction-btn'));
+    btns.forEach(btn => {
+      if (btn.textContent.startsWith(emoji)) {
+        const count = parseInt(btn.textContent.split(' ')[1]) - 1;
+        if (count <= 0) btn.remove();
+        else btn.textContent = emoji + ' ' + count;
+      }
+    });
+  },
+
+  async toggleReaction(msgId, emoji, hasMine) {
+    if (!this.state.currentConversationId) return;
     const csrf = document.querySelector('meta[name="csrf-token"]').content;
     const method = hasMine ? 'DELETE' : 'POST';
-    const url = `/chat/conversations/${currentConversationId}/messages/${msgId}/react`;
 
     try {
-      const res = await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf },
-        body: JSON.stringify({ emoji })
-      });
-      if (!res.ok) throw new Error('Failed to toggle reaction');
-    } catch (err) {
-      console.error('toggleReaction', err);
-      alert('Error toggling reaction');
-    }
-  }
-
-  function showReactionPicker(el, msg) {
-    const picker = document.createElement('div');
-    picker.className = 'reaction-picker';
-    const emojis = ['👍', '❤️', '😂', '😮', '😢', '😡'];
-    emojis.forEach(emoji => {
-      const btn = document.createElement('button');
-      btn.textContent = emoji;
-      btn.addEventListener('click', () => {
-        toggleReaction(msg.id, emoji, false);
-        picker.remove();
-      });
-      picker.appendChild(btn);
-    });
-    el.appendChild(picker);
-    setTimeout(() => picker.remove(), 3000); // auto remove
-  }
-
-  function fmtLastSeen(iso){
-  if (!iso) return 'Last seen a while ago';
-  const last = typeof iso === 'string' ? new Date(iso) : new Date(iso * 1000);
-  const now = new Date();
-  const diffMs = now - last;
-  const diffMins = Math.floor(diffMs / 60000);
-
-  if (diffMins < 1) return 'Last seen just now';
-  if (diffMins < 60) return `Last seen ${diffMins} min ago`;
-
-  const isToday = last.toDateString() === now.toDateString();
-  const optionsTime = { hour: '2-digit', minute: '2-digit' };
-  const optionsDate = { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' };
-
-  if (isToday) {
-      return `Last seen today at ${last.toLocaleTimeString([], optionsTime)}`;
-  } else {
-      return `Last seen on ${last.toLocaleDateString([], optionsDate)}`;
-  }
-} // <-- closing brace was missing before
-
-
-  /* Message context menu */
-  const menu = document.getElementById('msgContextMenu');
-  let activeMsg = null;
-
-  function attachMsgMenu(el, msg){
-    let pressTimer = null;
-
-    // Add reaction button on hover
-    const reactBtn = document.createElement('button');
-    reactBtn.className = 'react-btn';
-    reactBtn.textContent = '+';
-    reactBtn.style.display = 'none';
-    reactBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      showReactionPicker(el, msg);
-    });
-    el.appendChild(reactBtn);
-
-    el.addEventListener('mouseenter', () => reactBtn.style.display = 'block');
-    el.addEventListener('mouseleave', () => reactBtn.style.display = 'none');
-
-    // Right-click (desktop)
-    el.addEventListener('contextmenu', e => {
-      e.preventDefault();
-      showMenu(e.clientX, e.clientY, msg);
-    });
-
-    // Long-press (mobile)
-    el.addEventListener('touchstart', e => {
-      pressTimer = setTimeout(() => {
-        const t = e.touches[0];
-        showMenu(t.clientX, t.clientY, msg);
-      }, 550);
-    });
-
-    ['touchend','touchmove','touchcancel']
-      .forEach(evt => el.addEventListener(evt, ()=> clearTimeout(pressTimer)));
-  }
-
-  function showMenu(x, y, msg){
-    activeMsg = msg;
-
-    // hide edit/delete if not mine
-    menu.querySelector('[data-action="edit"]').style.display =
-    menu.querySelector('[data-action="delete"]').style.display =
-      (String(msg.sender_public_id) === currentUserId) ? 'block' : 'none';
-
-    menu.style.left = x + 'px';
-    menu.style.top = y + 'px';
-    menu.style.display = 'block';
-  }
-
-  document.addEventListener('click', () => {
-    menu.style.display = 'none';
-  });
-
-  const modal = document.getElementById('msgActionModal');
-  const modalTitle = document.getElementById('modalTitle');
-  const modalInput = document.getElementById('modalInput');
-  const modalConfirmText = document.getElementById('modalConfirmText');
-  const modalCancel = document.getElementById('modalCancel');
-  const modalConfirm = document.getElementById('modalConfirm');
-
-  let modalAction = null; // "edit", "forward", "delete"
-  let modalMsg = null;
-  modalConfirm.disabled = false;
-
-  menu.addEventListener('click', e => {
-    const action = e.target.dataset.action;
-    if (!action || !activeMsg) return;
-    modalMsg = activeMsg;
-
-    modalAction = action;
-
-    if (action === 'reply') {
-      setReplyTo(activeMsg);
-      menu.style.display = 'none';
-      return;
-    }
-
-    if (action === 'copy') {
-      navigator.clipboard.writeText(activeMsg.content || '');
-      menu.style.display = 'none';
-      return;
-    }
-
-    // Prepare modal
-    modalInput.style.display = (action === 'edit' || action === 'forward') ? 'block' : 'none';
-    modalConfirmText.style.display = (action === 'delete') ? 'block' : 'none';
-
-    modalTitle.textContent =
-      action === 'edit' ? 'Edit Message' :
-      action === 'forward' ? 'Forward Message' :
-      'Delete Message';
-
-    if (action === 'forward') {
-      modalInput.style.display = 'none';
-      modalConfirmText.style.display = 'none';
-
-      const convoListEl = document.getElementById('modalConvoList');
-      convoListEl.innerHTML = '';
-      convoListEl.style.display = 'block';
-
-      modal.dataset.targetConvoId = '';
-      modalConfirm.disabled = true; // 🔒 disabled until selection
-
-      const forwardList = conversationsCache.filter(c => c.id !== currentConversationId);
-
-      if (forwardList.length === 0) {
-        convoListEl.innerHTML =
-          '<div style="padding:8px; color:#555;">No other conversations to forward to.</div>';
-        return;
-      }
-
-      forwardList.forEach(conv => {
-        const item = document.createElement('div');
-        item.style.padding = '6px 8px';
-        item.style.borderRadius = '6px';
-        item.style.cursor = 'pointer';
-        item.style.display = 'flex';
-        item.style.alignItems = 'center';
-        item.style.gap = '6px';
-
-        const other =
-          (conv.participants || []).find(p => String(p.user_public_id) !== currentUserId)
-          || conv.participants?.[0]
-          || {};
-
-        item.innerHTML = `
-          <div style="width:28px;height:28px;border-radius:4px;background:#64748b;
-                      display:grid;place-items:center;color:#fff;font-size:12px;">
-            ${initialsFromName(other.name)}
-          </div>
-          <div style="flex:1;">
-            <div style="font-size:13px;font-weight:500;">${other.name || 'Conversation'}</div>
-            <div style="font-size:11px;color:#6b7280;">
-              ${conv.last_message ? (conv.last_message.content || '').slice(0,40) : 'No messages yet'}
-            </div>
-          </div>
-        `;
-
-        item.addEventListener('click', () => {
-          // clear previous selection
-          convoListEl.querySelectorAll('.selected')
-            .forEach(el => el.classList.remove('selected'));
-
-          item.classList.add('selected');
-          item.style.background = '#dbeafe';
-
-          modal.dataset.targetConvoId = conv.id;
-          modalConfirm.disabled = false; // ✅ now enabled
-        });
-
-        convoListEl.appendChild(item);
-      });
-    }
-
-    modal.style.display = 'flex';
-    if (action !== 'delete') modalInput.focus();
-
-    menu.style.display = 'none';
-  });
-
-  // Modal buttons
-  modalCancel.addEventListener('click', () => {
-    modal.style.display = 'none';
-    modalInput.value = '';
-  });
-
-  modalConfirm.addEventListener('click', async () => {
-  if (!modalMsg || !modalAction) return;
-
-  const csrf = document.querySelector('meta[name="csrf-token"]').content;
-
-  if (modalAction === 'edit') {
-    const newText = modalInput.value.trim();
-    if (!newText) return alert('Message cannot be empty');
-
-    await fetch(`/chat/conversations/${currentConversationId}/messages/${modalMsg.id}/edit`, {
-      method: 'POST',
-      headers: { 'Content-Type':'application/json', 'X-CSRFToken': csrf },
-      body: JSON.stringify({ content: newText })
-    });
-
-    openConversation(currentConversationId);
-  }
-
-  if (modalAction === 'forward') {
-    const targetId = modal.dataset.targetConvoId;
-    if (!targetId) return alert('Select a conversation first');
-
-    await fetch(`/chat/conversations/${currentConversationId}/messages/${modalMsg.id}/forward`, {
-      method: 'POST',
-      headers: { 'Content-Type':'application/json', 'X-CSRFToken': csrf },
-      body: JSON.stringify({ target_conversation_id: targetId })
-    });
-
-    alert('Message forwarded');
-  }
-
-  if (modalAction === 'delete') {
-    await fetch(`/chat/conversations/${currentConversationId}/messages/${modalMsg.id}/delete`, {
-      method: 'POST',
-      headers: { 'X-CSRFToken': csrf }
-    });
-
-    openConversation(currentConversationId);
-  }
-
-  modal.style.display = 'none';
-  modalInput.value = '';
-});
-
-  /* Search debounce */
-  let searchTimer = null;
-  convoSearch?.addEventListener('input', () => {
-    clearTimeout(searchTimer);
-    searchTimer = setTimeout(renderConversations, 180);
-  });
-
-  convoSearch?.addEventListener('focus', () => {
-    dmComposerWrapper && (dmComposerWrapper.style.display = 'none');
-  });
-
-  /* DM composer open/close */
-  newDMBtn?.addEventListener('click', () => {
-  const isOpen = dmComposerWrapper.style.display === 'block';
-
-  if (isOpen) {
-    dmComposerWrapper.style.display = 'none';
-    return;
-  }
-
-  // reset DM flow
-  selectedDMRole = null;
-  document.getElementById('dmClassSelect').value = '';
-  dmUserList.innerHTML = '';
-
-  dmComposerWrapper.style.display = 'block';
-  showDMStep('dmStepRole'); // 🔒 ONLY STEP 1
-});
-
-dmCancel?.addEventListener('click', () => {
-  dmComposerWrapper.style.display = 'none';
-  selectedDMRole = null;
-  document.getElementById('dmClassSelect').value = '';
-  dmUserList.innerHTML = '';
-  showDMStep('dmStepRole');
-});
-
-  /* Load & render conversations */
-  async function loadConversations(){
-    try {
-      const res = await fetch('/chat/conversations');
-      const data = await res.json();
-      conversationsCache = data || [];
-
-      participantNameMap = {};
-      conversationsCache.forEach(conv => {
-        (conv.participants || []).forEach(p => {
-          // key by public id
-          participantNameMap[p.user_public_id] = p.name;
-        });
-      });
-
-      renderConversations();
-    } catch (err) {
-      console.error('loadConversations', err);
-    }
-  }
-
-  function convoTitle(conv){
-    if (conv.type === 'direct') {
-      const other = (conv.participants || [])
-        .find(p => String(p.user_public_id) !== currentUserId)
-        || {};
-      return (other.name || 'Direct Message').toLowerCase();
-    }
-
-    // ✅ GROUP
-    return (conv.name || 'Group').toLowerCase();
-  }
-
-  function renderConversations(){
-    if (!conversationListEl) return;
-    conversationListEl.innerHTML = '';
-
-    const q = (convoSearch?.value || '').toLowerCase().trim();
-    let list = (conversationsCache || []).slice();
-
-    if (q) {
-      list = list.filter(c =>
-        convoTitle(c).includes(q) ||
-        (c.last_message && ((c.last_message.content || '') + ' ' + (c.last_message.sender_role || '')).toLowerCase().includes(q))
+      const res = await fetch(
+        `/chat/conversations/${this.state.currentConversationId}/messages/${msgId}/react`,
+        {
+          method,
+          headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf },
+          body: JSON.stringify({ emoji })
+        }
       );
+      if (!res.ok) throw new Error();
+    } catch (err) {
+      this.showError('Failed to toggle reaction');
     }
+  },
 
-    list.sort((a,b) => {
-      const ua = (a.unread_count || 0) > 0 ? 1 : 0;
-      const ub = (b.unread_count || 0) > 0 ? 1 : 0;
-      if (ua !== ub) return ub - ua;
-      return new Date(b.updated_at || 0) - new Date(a.updated_at || 0);
-    });
-
-    if(list.length === 0){
-      const empty = document.createElement('div');
-      empty.className = 'no-conversations';
-      empty.textContent = 'No conversations match your filters.';
-      conversationListEl.appendChild(empty);
-      return;
-    }
-
-    list.forEach(conv => {
-      const item = document.createElement('div');
-      item.className = 'conv-item' + (conv.id === currentConversationId ? ' active' : '');
-
-      const other = (conv.participants || []).find(p => String(p.user_public_id) !== currentUserId) || (conv.participants || [])[0] || {};
-      const avatar = document.createElement('div');
-      avatar.className = 'conv-avatar';
-      avatar.style.background = ({ admin:'#8b5cf6', teacher:'#10b981', student:'#3b82f6', parent:'#fb923c' }[other.role] || '#64748b');
-      if (conv.type === 'group') {
-        avatar.textContent = conv.participants?.length ? conv.participants.length : '0';
-        avatar.style.background = '#0ea5e9';
-      } else {
-        avatar.textContent = initialsFromName(other.name);
-      }
-      item.appendChild(avatar);
-
-      const meta = document.createElement('div'); meta.className = 'conv-meta';
-      const title = document.createElement('div'); title.className = 'conv-title';
-      if (conv.type === 'group') {
-      title.textContent = conv.name || 'Unnamed Group'; item.classList.add('group'); } else { title.textContent = other.name || `${other.role} ${other.user_public_id}`;}
-      meta.appendChild(title);
-
-      const sub = document.createElement('div'); sub.className = 'conv-sub';
-      if (conv.last_message) {
-        const lm = conv.last_message;
-        const preview = document.createElement('span');
-        preview.textContent = `${(lm.sender_role || '').toUpperCase()}: ${String(lm.content || '').slice(0, 52)}`;
-        sub.appendChild(preview);
-      } else {
-        const empty = document.createElement('span');
-        empty.className = 'text-muted';
-        empty.textContent = 'No messages yet';
-        sub.appendChild(empty);
-      }
-      meta.appendChild(sub);
-      item.appendChild(meta);
-
-      const right = document.createElement('div');
-      right.className = 'conv-right';
-      if (conv.unread_count && conv.unread_count > 0) {
-        const u = document.createElement('span');
-        u.className = 'badge bg-danger text-white ms-2';
-        u.textContent = conv.unread_count;
-        right.appendChild(u);
-      }
-      item.appendChild(right);
-
-      item.dataset.conversationId = conv.id;
-      item.addEventListener('click', () => openConversation(conv.id));
-      conversationListEl.appendChild(item);
-    });
-  }
-
-  /* Open DM by clicking available user (from DM composer) */
-  function openDM(userId, userLabel){
-  const existing = (conversationsCache || []).find(c => c.type === 'direct' && (c.participants || []).some(p => String(p.user_public_id) === String(userId)));
-  if (existing){
-    openConversation(existing.id);
-    pendingReceiverId = pendingReceiverLabel = null;
-    dmComposerWrapper.style.display = 'none'; // ← fix here
-    // Update header
-    rightTitle.textContent = existing.name || 'Group';
-    rightSub.textContent = existing.participants.map(p => p.name).join(',');
-
-    toggleGroupMenu(existing);
-    return;
-  }
-
-  pendingReceiverId = String(userId);
-  pendingReceiverLabel = userLabel || (`User ${userId}`);
-  currentConversationId = null;
-  messagesEl.innerHTML = '';
-  generalMenuWrapper.style.display = 'block';
-  isGroupChat = false;
-
-  rightTitle.textContent = `DM • ${pendingReceiverLabel}`;
-  rightSub.textContent = 'Start the conversation here';
-  rightAvatar.textContent = (pendingReceiverLabel || 'DM').slice(0,2).toUpperCase();
-  rightAvatar.style.background = '#3b82f6';
-  messageInput?.focus();
-
-  dmComposerWrapper.style.display = 'none'; // ← fix here too
-}
-
-  /* Open an existing conversation and render messages */
-  async function openConversation(convId){
-  currentConversationId = convId;
-  pendingReceiverId = pendingReceiverLabel = null;
-  generalMenuWrapper.style.display = 'block';
-  if (dmComposerWrapper) dmComposerWrapper.style.display = 'none';
-
-  const conv = conversationsCache.find(c => c.id === convId) || {};
-  isGroupChat = conv.type === 'group';
-
-  // ====== DEFINE `other` HERE ======
-  // For direct chats, find the other participant
-  const other = (conv.type === 'direct')
-    ? (conv.participants || []).find(p => String(p.user_public_id) !== currentUserId) || {}
-    : (conv.participants || [])[0] || {}; // For groups, use first participant as fallback
-  // =================================
-
-  
-
-  try {
-    const res = await fetch(`/chat/conversations/${convId}/messages`);
-    if (!res.ok) {
-      messagesEl.innerHTML = `<div class="no-conversations" style="padding:12px;">Could not open conversation</div>`;
-      return;
-    }
-    const msgs = await res.json();
-    if (!Array.isArray(msgs)) {
-      messagesEl.innerHTML = `<div class="no-conversations" style="padding:12px;">Unexpected response</div>`;
-      return;
-    }
-
-    messagesEl.innerHTML = '';
-
-    // group by day
-    const byDay = {};
-    msgs.forEach(m => {
-      const key = new Date(m.created_at || m.timestamp || Date.now()).toDateString();
-      if (!byDay[key]) byDay[key] = [];
-      byDay[key].push(m);
-    });
-
-    Object.keys(byDay).sort((a,b) => new Date(a) - new Date(b)).forEach(day => {
-      const dayMsgs = byDay[day];
-      const sep = document.createElement('div'); sep.className = 'date-sep';
-      sep.textContent = fmtDate(dayMsgs[0].created_at || dayMsgs[0].timestamp || day);
-      messagesEl.appendChild(sep);
-
-      let lastSender = null;
-      let groupEl = null;
-      dayMsgs.forEach(m => {
-        const sender = String(m.sender_public_id || '');
-        const isMine = sender === currentUserId;
-        if (sender !== lastSender) {
-          groupEl = document.createElement('div'); groupEl.className = 'msg-group';
-          lastSender = sender;
-        }
-
-        const mEl = document.createElement('div');
-        mEl.className = 'msg ' + (isMine ? 'sent' : 'received');
-        mEl.dataset.msgId = m.id;
-        mEl.dataset.sender = m.sender_public_id;
-        const editedTag = m.edited_at ? ' • edited' : '';
-
-        let replyHtml = '';
-        if (m.reply_to) {
-          const replyColor = getUserColor(m.reply_to.sender_public_id || m.reply_to.sender_id || '');
-          replyHtml = `
-            <div class="reply-quote reply-link"
-                data-reply-id="${m.reply_to.id}"
-                style="border-left-color:${replyColor}">
-              <div class="reply-sender" style="color:${replyColor}">
-                ${safeText(m.reply_to.sender_name)}
-              </div>
-              <div class="reply-content">
-                ${safeText(m.reply_to.content).slice(0, 80)}
-              </div>
-            </div>
-          `;
-        }
-
-        if (isMine) {
-          mEl.innerHTML = `
-            ${replyHtml}
-            <div class="msg-content">${safeText(m.content || m.message || '')}</div>
-            <div class="meta">
-              ${fmtTime(m.created_at || m.timestamp || '')}${editedTag}
-            </div>
-            <div class="reactions" data-msg-id="${m.id}"></div>
-          `;
-        } else {
-          mEl.innerHTML = `
-            ${isGroupChat ? `<div class="sender-name" style="color: ${getUserColor(m.sender_public_id)}">${m.sender_name || participantNameMap[m.sender_public_id] || 'Unknown'}</div>` : ''}
-            ${replyHtml}
-            <div class="msg-content">${safeText(m.content || m.message || '')}</div>
-            <div class="meta">
-              ${fmtTime(m.created_at || m.timestamp || '')}${editedTag}
-            </div>
-            <div class="reactions" data-msg-id="${m.id}"></div>
-          `;
-        }
-
-        attachMsgMenu(mEl, m);
-        groupEl.appendChild(mEl);
-
-        const reactionsEl = mEl.querySelector('.reactions');
-        renderReactions(reactionsEl, m.reactions || []);
-        mEl._reactions = m.reactions || [];
-        messagesEl.appendChild(groupEl);
-        messagesEl.scrollTop = messagesEl.scrollHeight;
-      });
-    });
-
-    // ===== UPDATE RIGHT HEADER =====
-    if (conv.type === 'group') {
-      rightTitle.textContent = conv.name || 'Group Chat';
-      rightSub.textContent = `${conv.participants?.length || 0} members`;
-      rightAvatar.textContent = conv.participants?.length || '0';
-      rightAvatar.style.background = '#0ea5e9';
-    } else {
-      rightTitle.textContent = other.name || 'Unknown User';
-      rightSub.textContent = conv.last_message ? `${(conv.last_message.sender_role || '').toUpperCase()} • ${fmtTime(conv.last_message.created_at || conv.last_message.timestamp || '')}` : 'Conversation';
-      rightAvatar.textContent = initialsFromName(other.name || `${other.role} ${other.user_public_id}`);
-      rightAvatar.style.background = ({ admin:'#8b5cf6', teacher:'#10b981', student:'#3b82f6', parent:'#fb923c' }[other.role] || '#64748b');
-    }
-    // =================================
-
-    setTimeout(() => messagesEl.scrollTop = messagesEl.scrollHeight, 100);
-    syncHiddenInputsForCall(conv);  // ← ADD THIS
-    await loadConversations();
-
-    // Mobile: show messages, hide conversations
-    if (window.innerWidth <= 768) {
-      document.querySelector('.left-panel').style.display = 'none';
-      document.querySelector('.right-panel').style.display = 'flex';
-      if (backToConversations) backToConversations.style.display = 'block';
-    }
-  } catch (err) {
-    console.error('openConversation', err);
-    messagesEl.innerHTML = `<div class="no-conversations" style="padding:12px;">Network error</div>`;
-  }
-}
-
-
-  /* Append message (optimistic + socket updates) */
-  function appendMessage(msg, { prepend = false } = {}) {
-    // allow append for open conversation only (temporary conv 'temp' allowed)
-    if (String(msg.conversation_id) !== String(currentConversationId) && String(msg.conversation_id) !== 'temp') return;
-    const isMine = String(msg.sender_public_id || msg.sender_id || '') === currentUserId;
-    const groupEl = document.createElement('div'); groupEl.className = 'msg-group';
-    const mEl = document.createElement('div'); mEl.className = 'msg ' + (isMine ? 'sent' : 'received');
-    if (msg.id) {mEl.dataset.msgId = msg.id;}
-    const content = safeText(msg.content || msg.message || '');
-    const created = msg.created_at || msg.timestamp || new Date().toISOString();
-
-    // Reply quote
-    let replyHtml = '';
-    if (msg.reply_to) {
-      const replyColor = getUserColor(msg.reply_to.sender_public_id || msg.reply_to.sender_id || '');
-      replyHtml = `
-        <div class="reply-quote reply-link"
-             data-reply-id="${msg.reply_to.id}"
-             style="border-left-color:${replyColor}">
-          <div class="reply-sender" style="color:${replyColor}">
-            ${safeText(msg.reply_to.sender_name)}
-          </div>
-          <div class="reply-content">
-            ${safeText(msg.reply_to.content).slice(0,80)}
-          </div>
-        </div>
-      `;
-    }
-
-    if (isMine) {
-      mEl.innerHTML = `${replyHtml}<div class="msg-content">${content}</div><div class="meta">${fmtTime(created)}</div><div class="reactions" data-msg-id="${msg.id}"></div>`;
-    } else {
-      mEl.innerHTML = `${isGroupChat ? `<div class="sender-name" style="color: ${getUserColor(String(msg.sender_public_id || msg.sender_id))}">${msg.sender_name || participantNameMap[String(msg.sender_public_id || msg.sender_id)] || 'Unknown'}</div>` : ''}${replyHtml}<div class="msg-content">${content}</div><div class="meta">${fmtTime(created)}</div><div class="reactions" data-msg-id="${msg.id}"></div>`;
-    }
-
-    groupEl.appendChild(mEl);
-    // Initialize reactions
-    const reactionsEl = mEl.querySelector('.reactions');
-    renderReactions(reactionsEl, []);
-    mEl._reactions = [];
-    messagesEl.lastElementChild?.scrollIntoView({ behavior:'smooth', block:'end' });
-  }
-
-  /* Sending messages (HTTP + optimistic UI) */
-  messageInput?.addEventListener('keydown', e => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      sendDirectBtn?.click();
-    }
-  });
-
-  sendDirectBtn?.addEventListener('click', async () => {
-    const text = (messageInput?.value || '').trim();
+  // ===== SENDING MESSAGES =====
+  async sendMessage() {
+    const text = this.dom.messageInput.value.trim();
     if (!text) return;
 
-    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '';
-
-    // Capture reply info BEFORE doing any resets so it can be sent
-    const replyId = replyToMessage ? replyToMessage.id : null;
-    const replyObj = replyToMessage ? {
-      id: replyToMessage.id,
-      sender_public_id: replyToMessage.sender_public_id,
-      sender_name: replyToMessage.sender_name,
-      content: replyToMessage.content
-    } : null;
-
-    // If we are in an open conversation (group or direct), post to conversation endpoint
-    if (currentConversationId) {
-      // optimistic append — include the reply object so the UI shows the quote immediately
-      const tmpMsg = {
-        conversation_id: currentConversationId,
-        sender_public_id: currentUserId,
-        sender_role: currentUserRole,
-        sender_name: 'You',
-        content: text,
-        reply_to: replyObj,              // <<-- include reply in optimistic UI
-        created_at: new Date().toISOString()
-      };
-      appendMessage(tmpMsg);
-
-      // clear the input, but DO NOT clear replyToMessage yet (we need it for the request)
-      messageInput.value = '';
-
-      try {
-        const res = await fetch(`/chat/conversations/${encodeURIComponent(currentConversationId)}/messages`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
-          body: JSON.stringify({
-            message: text,
-            reply_to_message_id: replyId       // <<-- use replyId captured earlier
-          })
-        });
-
-        if (!res.ok) {
-          const txt = await res.text();
-          console.warn('Send to conversation failed:', res.status, txt);
-          alert(`Send failed (${res.status})`);
-          return;
-        }
-
-        const data = await res.json();
-        if (!data.success) {
-          console.warn('send failed', data);
-          alert(data.error || 'Send failed');
-          return;
-        }
-
-        // **Only after success** clear reply state and update UI
-        replyToMessage = null;
-        updateReplyUI();
-
-        // refresh UI with authoritative data
-        currentConversationId = data.conversation_id || currentConversationId;
-        pendingReceiverId = pendingReceiverLabel = null;
-        if (currentConversationId) await openConversation(currentConversationId);
-        else await loadConversations();
-      } catch (err) {
-        console.error('sendConversation', err);
-        // keep replyToMessage intact to allow retry; user still sees optimistic message
-        alert('Network error');
-      }
-
-      return;
-    }
-
-    // Otherwise no open conversation: fall back to DM creation endpoint
-
-    // derive receiver
-    let receiver_public_id = pendingReceiverId || null;
-    if (!receiver_public_id && currentConversationId) {
-      const conv = (conversationsCache || []).find(c => String(c.id) === String(currentConversationId));
-      if (conv) {
-        const other = (conv.participants || []).find(p => String(p.user_public_id) !== currentUserId);
-        receiver_public_id = other ? other.user_public_id : null;
-      }
-    }
-    if (String(receiver_public_id) === currentUserId) {
-      alert('You cannot message yourself.');
-      return;
-    }
-
-    // optimistic append for DM (include reply)
-    const tmpMsg2 = {
-      conversation_id: currentConversationId || 'temp',
-      sender_public_id: currentUserId,
-      sender_role: currentUserRole,
-      sender_name: 'You',
-      content: text,
-      reply_to: replyObj,                  // <<-- include reply in optimistic UI
-      created_at: new Date().toISOString()
-    };
-    appendMessage(tmpMsg2);
-
-    // clear input but DO NOT clear replyToMessage yet
-    messageInput.value = '';
-
-    try {
-      const res = await fetch('/chat/send_dm', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
-        body: JSON.stringify({
-          message: text,
-          receiver_public_id: String(receiver_public_id),
-          reply_to_message_id: replyId       // <<-- send the captured reply id
-        })
-      });
-
-      if (!res.ok) {
-        const txt = await res.text();
-        console.warn('Send failed:', res.status, txt);
-        alert(`Send failed (${res.status})`);
-        return;
-      }
-
-      const data = await res.json();
-      if (!data.success) {
-        console.warn('send failed', data);
-        alert(data.error || 'Send failed');
-        return;
-      }
-
-      // **Only after success** clear reply state and update UI
-      replyToMessage = null;
-      updateReplyUI();
-
-      currentConversationId = data.conversation_id || currentConversationId;
-      pendingReceiverId = pendingReceiverLabel = null;
-
-      if (currentConversationId) await openConversation(currentConversationId);
-      else await loadConversations();
-
-    } catch (err) {
-      console.error('sendDirect', err);
-      // keep replyToMessage intact so user can retry
-      alert('Network error');
-    }
-  });
-
-  newGroupBtn?.addEventListener('click', async () => {
-    groupSettingsModal.style.display = 'flex';
-    groupNameInput.value = '';
-    groupMemberList.innerHTML = 'Loading users…';
-    groupMembers = [];
-
-    try {
-      const roles = ['student', 'teacher', 'parent', 'admin'];
-      const users = []; // ✅ single declaration
-
-      for (const role of roles) {
-        const res = await fetch(`/chat/users?role=${role}`);
-        const data = await res.json();
-        data.forEach(u => users.push({ ...u, role }));
-      }
-
-      groupMemberList.innerHTML = '';
-
-      if (users.length === 0) {
-        groupMemberList.innerHTML = 'No users available';
-        return;
-      }
-
-      users.forEach(u => {
-        if (String(u.id) === String(currentUserId)) return;
-
-        const item = document.createElement('div');
-        item.style.display = 'flex';
-        item.style.alignItems = 'center';
-        item.style.gap = '6px';
-
-        item.innerHTML = `
-          <input type="checkbox" value="${u.id}" id="user-${u.id}">
-          <label for="user-${u.id}">${u.name} (${u.role})</label>
-        `;
-
-        const checkbox = item.querySelector('input');
-        checkbox.addEventListener('change', e => {
-          if (e.target.checked) {
-            groupMembers.push(u.id);
-          } else {
-            groupMembers = groupMembers.filter(id => id !== u.id);
-          }
-        });
-
-        groupMemberList.appendChild(item);
-      });
-
-    } catch (err) {
-      console.error(err);
-      groupMemberList.innerHTML = 'Error loading users';
-    }
-  });
-
-  // CLOSE MODAL
-  groupSettingsClose?.addEventListener('click', () => {
-    groupSettingsModal.style.display = 'none';
-    groupNameInput.value = '';
-    groupNameInput.style.display = 'block';
-    document.querySelector('#groupSettingsModal h5').textContent = 'Group Settings';
-    groupRenameBtn.textContent = 'Save';
-    groupMembers = [];
-    delete groupSettingsModal.dataset.mode;
-  });
-
-  // CREATE GROUP or ADD MEMBERS
-  groupRenameBtn?.addEventListener('click', async () => {
-    const mode = groupSettingsModal.dataset.mode || 'create';
     const csrf = document.querySelector('meta[name="csrf-token"]').content;
+    const replyId = this.state.replyToMessage?.id || null;
 
-    if (mode === 'create') {
-      const groupName = groupNameInput.value.trim();
-      if (!groupName) return alert('Group name cannot be empty');
-      if (groupMembers.length === 0) return alert('Select at least one member');
-
-      try {
-        const res = await fetch('/chat/conversations/group/create', {
+    try {
+      if (this.state.currentConversationId) {
+        // Send to conversation
+        const res = await fetch(`/chat/conversations/${this.state.currentConversationId}/messages`, {
           method: 'POST',
-          headers: { 'Content-Type':'application/json', 'X-CSRFToken': csrf },
-          body: JSON.stringify({
-            name: groupName,
-            members: groupMembers
-          })
+          headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf },
+          body: JSON.stringify({ message: text, reply_to_message_id: replyId })
         });
 
-        if (!res.ok) throw new Error('Failed to create group');
-
-        const newGroup = await res.json();
-        await loadConversations();
-        openConversation(newGroup.id);
-      } catch (err) {
-        console.error(err);
-        alert('Error creating group');
-      }
-    } else if (mode === 'add_members') {
-      if (groupMembers.length === 0) return alert('Select at least one member to add');
-
-      try {
-        const res = await fetch(`/chat/conversations/${currentConversationId}/add_members`, {
-          method: 'POST',
-          headers: { 'Content-Type':'application/json', 'X-CSRFToken': csrf },
-          body: JSON.stringify({
-            members: groupMembers
-          })
-        });
-
-        if (!res.ok) throw new Error('Failed to add members');
-
+        if (!res.ok) throw new Error();
         const data = await res.json();
-        alert(`Added ${data.added.length} members`);
-        await loadConversations();
-        openConversation(currentConversationId);
-      } catch (err) {
-        console.error(err);
-        alert('Error adding members');
+        if (!data.success) throw new Error(data.error);
+
+        this.dom.messageInput.value = '';
+        this.state.replyToMessage = null;
+        this.updateReplyUI();
+      } else if (this.state.pendingReceiverId) {
+        // Create new DM
+        const res = await fetch('/chat/send_dm', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf },
+          body: JSON.stringify({ message: text, receiver_public_id: this.state.pendingReceiverId, reply_to_message_id: replyId })
+        });
+
+        if (!res.ok) throw new Error();
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error);
+
+        this.dom.messageInput.value = '';
+        this.state.replyToMessage = null;
+        this.updateReplyUI();
+
+        await this.loadConversations();
+        this.openConversation(data.conversation_id);
       }
+    } catch (err) {
+      console.error('❌ sendMessage:', err);
+      this.showError('Failed to send message');
+    }
+  },
+
+  // ===== DM COMPOSER =====
+  openDMComposer() {
+    this.state.selectedDMRole = null;
+    this.dom.dmComposerWrapper.style.display = 'flex';
+    document.getElementById('dmStepRole').style.display = 'block';
+    document.getElementById('dmStepProgramme').style.display = 'none';
+    document.getElementById('dmStepLevel').style.display = 'none';
+    document.getElementById('dmStepUsers').style.display = 'none';
+  },
+
+  closeDMComposer() {
+    this.dom.dmComposerWrapper.style.display = 'none';
+  },
+
+  async selectDMRole(role) {
+    this.state.selectedDMRole = role;
+
+    if (role === 'teacher') {
+      document.getElementById('dmStepRole').style.display = 'none';
+      document.getElementById('dmStepUsers').style.display = 'block';
+      await this.loadUsers('teacher');
+    } else {
+      document.getElementById('dmStepRole').style.display = 'none';
+      document.getElementById('dmStepProgramme').style.display = 'block';
+      await this.loadProgrammes();
+    }
+  },
+
+  async loadProgrammes() {
+    try {
+      const res = await fetch('/chat/programmes');
+      const programmes = await res.json();
+      const select = document.getElementById('dmProgrammeSelect');
+      select.innerHTML = '<option value="">Choose programme</option>';
+      programmes.forEach(p => {
+        const opt = document.createElement('option');
+        opt.value = p.name;
+        opt.textContent = p.name;
+        select.appendChild(opt);
+      });
+
+      select.onchange = async () => {
+        if (select.value) {
+          document.getElementById('dmStepProgramme').style.display = 'none';
+          document.getElementById('dmStepLevel').style.display = 'block';
+          await this.loadLevels();
+        }
+      };
+    } catch (err) {
+      this.showError('Failed to load programmes');
+    }
+  },
+
+  async loadLevels() {
+    try {
+      const res = await fetch('/chat/levels');
+      const levels = await res.json();
+      const select = document.getElementById('dmLevelSelect');
+      select.innerHTML = '<option value="">Choose level</option>';
+      levels.forEach(l => {
+        const opt = document.createElement('option');
+        opt.value = l.level;
+        opt.textContent = 'Level ' + l.level;
+        select.appendChild(opt);
+      });
+
+      select.onchange = async () => {
+        if (select.value) {
+          document.getElementById('dmStepLevel').style.display = 'none';
+          document.getElementById('dmStepUsers').style.display = 'block';
+          const prog = document.getElementById('dmProgrammeSelect').value;
+          await this.loadUsers('student', prog, select.value);
+        }
+      };
+    } catch (err) {
+      this.showError('Failed to load levels');
+    }
+  },
+
+  async loadUsers(role, programme = null, level = null) {
+    try {
+      let url = `/chat/users?role=${role}`;
+      if (programme) url += `&programme=${encodeURIComponent(programme)}`;
+      if (level) url += `&level=${encodeURIComponent(level)}`;
+
+      const res = await fetch(url);
+      const users = await res.json();
+      const list = document.getElementById('dmUserList');
+
+      if (!users || users.length === 0) {
+        list.innerHTML = '<p style="padding: 10px;">No users found</p>';
+        return;
+      }
+
+      list.innerHTML = users.map(u => `
+        <div class="user-item" data-user-id="${u.id}">
+          <div class="user-avatar" style="background: ${this.util.getUserColor(u.id)}; width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-size: 12px; font-weight: 600;">${this.util.getInitials(u.name)}</div>
+          <div style="flex: 1;">${u.name}</div>
+        </div>
+      `).join('');
+
+      // Add styles to user items
+      const style = document.createElement('style');
+      style.textContent = `
+        .user-item {
+          display: flex;
+          gap: 10px;
+          padding: 8px 10px;
+          cursor: pointer;
+          border-bottom: 1px solid #eee;
+          align-items: center;
+          transition: background-color 0.2s;
+        }
+        .user-item:hover {
+          background-color: #f5f5f5;
+        }
+      `;
+      document.head.appendChild(style);
+
+      list.querySelectorAll('.user-item').forEach(item => {
+        item.onclick = async () => {
+          await this.startDM(item.dataset.userId);
+        };
+      });
+    } catch (err) {
+      this.showError('Failed to load users');
+    }
+  },
+
+  async startDM(userId) {
+    const existing = this.state.conversations.find(c =>
+      c.type === 'direct' && c.participants.some(p => p.user_public_id === userId)
+    );
+
+    if (existing) {
+      this.closeDMComposer();
+      this.openConversation(existing.id);
+      return;
     }
 
-    // Close modal
-    groupSettingsModal.style.display = 'none';
-    groupNameInput.value = '';
-    groupNameInput.style.display = 'block';
-    document.querySelector('#groupSettingsModal h5').textContent = 'Group Settings';
-    groupRenameBtn.textContent = 'Save';
-    groupMembers = [];
-    delete groupSettingsModal.dataset.mode;
-  });
+    this.state.pendingReceiverId = userId;
+    this.state.currentConversationId = null;
+    this.closeDMComposer();
+    this.dom.messagesContainer.innerHTML = '';
+    this.dom.rightTitle.textContent = 'New Message';
+    this.dom.rightSub.textContent = 'Start typing...';
+  },
 
-  /* Socket.IO realtime */
-  const socket = (typeof io === 'function') ? io() : null;
-  if (socket) {
-    socket.on('connect', () => {
-      // server uses session to join; emitting helps for debugging
-      socket.emit('join', { user_id: currentUserId });
-    });
-    socket.on('typing', payload => {
-      if (String(payload.conversation_id) === String(currentConversationId)) showTypingIndicator(payload.user_role);
-    });
-    socket.on('presence_update', payload => {
-      const { user_public_id, status, last_seen } = payload;
+  // ===== GROUPS =====
+  openGroupCreator() {
+    alert('Group creation coming soon');
+  },
 
-      const conv = conversationsCache.find(c =>
-        (c.participants || []).some(p => String(p.user_public_id) === String(user_public_id))
-      );
-
-      if (!conv || conv.id !== currentConversationId) return;
-
-      if (status === 'online') {
-        rightSub.innerHTML =
-          `<span class="presence-dot presence-online"></span>Online`;
+  // ===== MENU =====
+  handleMenuAction(action) {
+    if (action === 'search') {
+      this.dom.convoSearch?.focus();
+    } else if (action === 'add_members') {
+      if (this.state.isGroupChat) {
+        this.showAddMembersDialog();
       } else {
-        rightSub.innerHTML =
-          `<span class="presence-dot presence-offline"></span>${fmtLastSeen(last_seen)}`;
+        this.showError('Can only add members to groups');
+      }
+    } else if (action === 'mute') {
+      this.toggleMuteConversation();
+    } else if (action === 'clear_chat') {
+      if (confirm('Clear chat history? This cannot be undone.')) {
+        this.dom.messagesContainer.innerHTML = '';
+        this.showSuccess('Chat cleared');
+      }
+    } else if (action === 'search_messages') {
+      const searchBar = document.getElementById('messageSearchBar');
+      if (searchBar) {
+        searchBar.style.display = 'block';
+        document.getElementById('messageSearchInput')?.focus();
+      }
+    }
+  },
+
+  async toggleMuteConversation() {
+    if (!this.state.currentConversationId) return;
+    
+    const btn = document.querySelector('[data-action="mute"]');
+    if (!btn) return;
+    
+    const isMuted = btn.innerHTML.includes('Unmute');
+    const endpoint = isMuted ? 'unmute' : 'mute';
+    
+    try {
+      const csrf = document.querySelector('meta[name="csrf-token"]').content;
+      const res = await fetch(`/chat/${endpoint}/${this.state.currentConversationId}`, {
+        method: 'POST',
+        headers: { 'X-CSRFToken': csrf }
+      });
+      
+      if (res.ok) {
+        if (isMuted) {
+          btn.innerHTML = '<i class="fas fa-bell-slash"></i> Mute';
+        } else {
+          btn.innerHTML = '<i class="fas fa-bell"></i> Unmute';
+        }
+        this.showSuccess(isMuted ? 'Unmuted' : 'Muted');
+      }
+    } catch (err) {
+      this.showError('Failed to toggle mute');
+    }
+  },
+
+  async showAddMembersDialog() {
+    if (!this.state.isGroupChat) return;
+    
+    const modal = document.getElementById('msgActionModal');
+    const title = document.getElementById('modalTitle');
+    const input = document.getElementById('modalInput');
+    const confirm = document.getElementById('modalConfirm');
+    
+    title.textContent = 'Add Members';
+    input.placeholder = 'Enter member IDs (comma separated)';
+    input.value = '';
+    modal.style.display = 'block';
+    
+    confirm.onclick = async () => {
+      const memberIds = input.value.split(',').map(id => id.trim()).filter(id => id);
+      if (!memberIds.length) {
+        this.showError('No members specified');
+        return;
+      }
+      
+      try {
+        const csrf = document.querySelector('meta[name="csrf-token"]').content;
+        const res = await fetch(`/chat/conversations/${this.state.currentConversationId}/add_members`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf },
+          body: JSON.stringify({ members: memberIds })
+        });
+        
+        if (res.ok) {
+          this.showSuccess('Members added');
+          modal.style.display = 'none';
+          this.loadConversations();
+        }
+      } catch (err) {
+        this.showError('Failed to add members');
+      }
+    };
+  },
+
+  // ===== MESSAGE MENU =====
+  showMessageMenu(e, msg) {
+    const menu = this.dom.msgContextMenu;
+    menu.style.left = e.pageX + 'px';
+    menu.style.top = e.pageY + 'px';
+    menu.style.display = 'block';
+
+    const isMine = msg.sender_public_id === this.state.currentUserId;
+    menu.querySelector('[data-action="edit"]').style.display = isMine ? 'block' : 'none';
+    menu.querySelector('[data-action="delete"]').style.display = isMine ? 'block' : 'none';
+
+    menu.querySelectorAll('button').forEach(btn => {
+      btn.onclick = () => this.handleMessageAction(btn.dataset.action, msg);
+    });
+  },
+
+  async handleMessageAction(action, msg) {
+    const isMine = msg.sender_public_id === this.state.currentUserId;
+
+    if (action === 'reply') {
+      this.state.replyToMessage = msg;
+      this.updateReplyUI();
+      this.dom.messageInput.focus();
+    } else if (action === 'edit') {
+      if (!isMine) return this.showError('Can only edit your own messages');
+      const newText = prompt('Edit:', msg.content);
+      if (newText && newText.trim()) {
+        const csrf = document.querySelector('meta[name="csrf-token"]').content;
+        try {
+          await fetch(`/chat/conversations/${this.state.currentConversationId}/messages/${msg.id}/edit`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf },
+            body: JSON.stringify({ content: newText.trim() })
+          });
+          this.showSuccess('Message updated');
+          this.loadMessages();
+        } catch {
+          this.showError('Failed to edit');
+        }
+      }
+    } else if (action === 'copy') {
+      navigator.clipboard.writeText(msg.content);
+      this.showSuccess('Copied to clipboard');
+    } else if (action === 'forward') {
+      this.showForwardDialog(msg);
+    } else if (action === 'delete') {
+      if (!isMine) return this.showError('Can only delete your own messages');
+      if (confirm('Delete message?')) {
+        const csrf = document.querySelector('meta[name="csrf-token"]').content;
+        try {
+          await fetch(`/chat/conversations/${this.state.currentConversationId}/messages/${msg.id}/delete`, {
+            method: 'POST',
+            headers: { 'X-CSRFToken': csrf }
+          });
+          this.showSuccess('Message deleted');
+          this.loadMessages();
+        } catch {
+          this.showError('Failed to delete');
+        }
+      }
+    } else if (action === 'react') {
+      this.showReactionPicker(msg);
+    }
+
+    this.dom.msgContextMenu.style.display = 'none';
+  },
+
+  async showForwardDialog(msg) {
+    console.log('📤 Forward dialog opening', {msg});
+    const modal = document.getElementById('msgActionModal');
+    const title = document.getElementById('modalTitle');
+    const convoList = document.getElementById('modalConvoList');
+    const confirm = document.getElementById('modalConfirm');
+    
+    if (!modal) console.error('❌ Modal not found');
+    if (!confirm) console.error('❌ Confirm button not found');
+    
+    title.textContent = 'Forward To';
+    
+    // Build conversation list
+    const filteredConvos = this.state.conversations.filter(c => c.id !== this.state.currentConversationId);
+    console.log(`📋 ${filteredConvos.length} conversations available to forward to`);
+    
+    if (filteredConvos.length === 0) {
+      convoList.innerHTML = '<p style="padding: 10px; color: #999;">No other conversations available</p>';
+    } else {
+      convoList.innerHTML = filteredConvos.map(c => {
+        const other = c.participants.find(p => p.user_public_id !== this.state.currentUserId) || c.participants[0];
+        return `<label style="display: block; padding: 10px; cursor: pointer; border-radius: 4px; border: 1px solid #ddd; margin-bottom: 6px; transition: all 0.2s;">
+          <input type="radio" name="forward_convo" value="${c.id}" style="margin-right: 8px;">
+          <strong>${c.name || other?.name || 'Chat'}</strong>
+          ${c.type === 'group' ? ` (${c.participants?.length || 0} members)` : ''}
+        </label>`;
+      }).join('');
+    }
+    
+    document.getElementById('modalInput').style.display = 'none';
+    document.getElementById('modalConfirmText').textContent = '';
+    modal.style.display = 'block';
+    
+    confirm.textContent = 'Forward';
+    
+    // Clone to remove old listeners
+    const newConfirmBtn = confirm.cloneNode(true);
+    confirm.parentNode.replaceChild(newConfirmBtn, confirm);
+    const confirmBtn = document.getElementById('modalConfirm');
+    
+    // Add event listener
+    const forwardHandler = async (e) => {
+      console.log('🔔 Forward button clicked');
+      e.preventDefault();
+      e.stopPropagation();
+      
+      const targetConvoId = document.querySelector('input[name="forward_convo"]:checked')?.value;
+      console.log('Target:', targetConvoId);
+      
+      if (!targetConvoId) {
+        this.showError('Select a conversation');
+        return;
+      }
+      
+      try {
+        const csrf = document.querySelector('meta[name="csrf-token"]').content;
+        const messageBody = {
+          message: `[Forwarded] ${msg.content}`,
+          reply_to_message_id: null
+        };
+        console.log('📤 Sending:', messageBody);
+        
+        const res = await fetch(`/chat/conversations/${targetConvoId}/messages`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf },
+          body: JSON.stringify(messageBody)
+        });
+        
+        console.log('Response:', res.status);
+        const data = await res.json();
+        console.log('Response data:', data);
+        
+        if (data.success) {
+          this.showSuccess('Message forwarded!');
+          modal.style.display = 'none';
+          this.loadConversations();
+        } else {
+          this.showError(data.error || 'Forward failed');
+        }
+      } catch (err) {
+        console.error('Forward error:', err);
+        this.showError('Error: ' + err.message);
+      }
+    };
+    
+    confirmBtn.addEventListener('click', forwardHandler);
+    console.log('✅ Forward handler attached');
+  },
+
+  async showReactionPicker(msg) {
+    const reactions = ['👍', '❤️', '😂', '😮', '😢', '🔥', '👏', '🙏'];
+    const modal = document.getElementById('msgActionModal');
+    const title = document.getElementById('modalTitle');
+    const confirm = document.getElementById('modalConfirm');
+    const convoList = document.getElementById('modalConvoList');
+    
+    title.textContent = 'Add Reaction';
+    document.getElementById('modalInput').style.display = 'none';
+    document.getElementById('modalConfirmText').textContent = '';
+    
+    convoList.innerHTML = reactions
+      .map(emoji => `<button style="padding: 10px 15px; margin: 4px; font-size: 20px; border: 1px solid #ddd; border-radius: 4px; cursor: pointer; background: white;" data-emoji="${emoji}">${emoji}</button>`)
+      .join('');
+    
+    modal.style.display = 'block';
+    confirm.style.display = 'none';
+    
+    convoList.querySelectorAll('button').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const emoji = btn.dataset.emoji;
+        try {
+          const csrf = document.querySelector('meta[name="csrf-token"]').content;
+          const res = await fetch(`/chat/conversations/${this.state.currentConversationId}/messages/${msg.id}/react`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf },
+            body: JSON.stringify({ emoji })
+          });
+          
+          if (res.ok) {
+            modal.style.display = 'none';
+            confirm.style.display = 'block';
+            this.loadMessages();
+          }
+        } catch (err) {
+          this.showError('Failed to add reaction');
+        }
+      });
+    });
+  },
+
+  // ===== REPLY =====
+  updateReplyUI() {
+    if (!this.dom.replyDiv) return;
+
+    if (this.state.replyToMessage) {
+      const msg = this.state.replyToMessage;
+      this.dom.replyDiv.innerHTML = `
+        <div style="border-left: 3px solid ${this.util.getUserColor(msg.sender_public_id)}; padding-left: 8px; flex: 1;">
+          <strong style="color: ${this.util.getUserColor(msg.sender_public_id)};">${msg.sender_name}</strong>
+          <div style="font-size: 12px;">${this.util.safeText(msg.content).slice(0, 60)}</div>
+        </div>
+        <button id="clearReply" style="background: none; border: none; cursor: pointer; font-size: 20px;">×</button>
+      `;
+      this.dom.replyDiv.style.display = 'flex';
+      this.dom.replyDiv.style.alignItems = 'center';
+      this.dom.replyDiv.style.gap = '8px';
+      document.getElementById('clearReply').onclick = () => {
+        this.state.replyToMessage = null;
+        this.updateReplyUI();
+      };
+    } else {
+      this.dom.replyDiv.style.display = 'none';
+    }
+  },
+
+  // ===== PRESENCE =====
+  updatePresenceIndicator() {
+    if (!this.state.currentConversationId) return;
+    const conv = this.state.conversations.find(c => c.id === this.state.currentConversationId);
+    if (!conv || conv.type === 'group') return;
+
+    const other = conv.participants.find(p => p.user_public_id !== this.state.currentUserId);
+    if (!other) return;
+
+    const online = this.state.onlineUsers.has(other.user_public_id);
+    this.dom.rightSub.textContent = online ? '🟢 Online' : '⚫ Offline';
+  },
+
+  // ===== UTILITIES =====
+  async markAsRead(convId) {
+    const csrf = document.querySelector('meta[name="csrf-token"]').content;
+    try {
+      await fetch('/chat/mark_read', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf },
+        body: JSON.stringify({ conversation_id: convId })
+      });
+    } catch (err) {
+      console.warn('mark_read failed:', err);
+    }
+  },
+
+  // ===== MESSAGE SEARCH =====
+  setupMessageSearch() {
+    const searchInput = document.getElementById('messageSearchInput');
+    if (!searchInput) return;
+    
+    searchInput.addEventListener('input', (e) => {
+      const query = e.target.value.toLowerCase();
+      this.filterMessages(query);
+    });
+  },
+
+  filterMessages(query) {
+    const messages = document.querySelectorAll('.msg-item, .msg-own');
+    let foundCount = 0;
+
+    messages.forEach(msg => {
+      const content = msg.textContent.toLowerCase();
+      if (query && content.includes(query)) {
+        msg.style.display = 'block';
+        msg.style.backgroundColor = '#fff3cd';
+        foundCount++;
+      } else if (query) {
+        msg.style.display = 'none';
+      } else {
+        msg.style.display = 'block';
+        msg.style.backgroundColor = 'transparent';
       }
     });
 
-    socket.on('new_message', payload => {
-      try {
-        if (String(payload.conversation_id) === String(currentConversationId)) {
-          appendMessage(payload.message);
+    if (query && foundCount === 0) {
+      this.showError(`No messages found for "${query}"`);
+    } else if (query) {
+      this.showSuccess(`Found ${foundCount} message(s)`);
+    }
+  },
+
+  // ===== GROUP SETTINGS =====
+  setupGroupSettings() {
+    const groupSettingsBtn = document.getElementById('groupSettingsBtn');
+    if (!groupSettingsBtn) return;
+    
+    groupSettingsBtn.addEventListener('click', () => {
+      if (!this.state.isGroupChat) {
+        this.showError('Not a group chat');
+        return;
+      }
+      this.showGroupSettingsModal();
+    });
+  },
+
+  showGroupSettingsModal() {
+    const modal = document.getElementById('groupSettingsModal');
+    const conv = this.state.conversations.find(c => c.id === this.state.currentConversationId);
+    
+    if (!conv) return;
+    
+    const nameInput = document.getElementById('groupNameInput');
+    const memberList = document.getElementById('groupMemberList');
+    
+    nameInput.value = conv.name || '';
+    
+    memberList.innerHTML = conv.participants.map(p => `
+      <div style="padding: 8px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center;">
+        <span>${p.name}</span>
+        <button style="padding: 4px 8px; background: #ff6b6b; color: white; border: none; border-radius: 4px; cursor: pointer;" data-user-id="${p.user_public_id}">Remove</button>
+      </div>
+    `).join('');
+    
+    // Remove member handlers
+    memberList.querySelectorAll('button').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const userId = btn.dataset.userId;
+        if (confirm('Remove this member?')) {
+          await this.removeMember(userId);
         }
-        loadConversations();
-      } catch (e) { console.error('socket new_message', e); }
+      });
     });
-    socket.on('message_edited', payload => {
-      const { conversation_id, message } = payload;
+    
+    modal.style.display = 'block';
+  },
 
-      if (String(conversation_id) !== String(currentConversationId)) return;
+  async removeMember(userId) {
+    try {
+      const csrf = document.querySelector('meta[name="csrf-token"]').content;
+      const res = await fetch(`/chat/groups/${this.state.currentConversationId}/remove_member`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf },
+        body: JSON.stringify({ member_public_id: userId })
+      });
+      
+      if (res.ok) {
+        this.showSuccess('Member removed');
+        this.loadConversations();
+      }
+    } catch (err) {
+      this.showError('Failed to remove member');
+    }
+  },
 
-      const msgEl = document.querySelector(`[data-msg-id="${message.id}"]`);
-      if (!msgEl) return;
+  showError(msg) {
+    console.error('❌', msg);
+    alert(msg);
+  },
 
-      msgEl.querySelector('.msg-content').textContent = message.content;
-
-      const metaEl = msgEl.querySelector('.meta');
-      metaEl.textContent =
-        `${fmtTime(message.created_at)} • edited`;
-    });
-    socket.on('reaction_added', payload => {
-      const { message_id, reaction } = payload;
-      const msgEl = document.querySelector(`[data-msg-id="${message_id}"]`);
-      if (!msgEl) return;
-      const reactionsEl = msgEl.querySelector('.reactions');
-      const existing = msgEl._reactions || [];
-      existing.push(reaction);
-      msgEl._reactions = existing;
-      renderReactions(reactionsEl, existing);
-    });
-    socket.on('reaction_removed', payload => {
-      const { message_id, user_public_id, emoji } = payload;
-      const msgEl = document.querySelector(`[data-msg-id="${message_id}"]`);
-      if (!msgEl) return;
-      const reactionsEl = msgEl.querySelector('.reactions');
-      const existing = msgEl._reactions || [];
-      const filtered = existing.filter(r => !(r.user_public_id === user_public_id && r.emoji === emoji));
-      msgEl._reactions = filtered;
-      renderReactions(reactionsEl, filtered);
-    });
+  showSuccess(msg) {
+    console.log('✅', msg);
   }
+};
 
-  function showTypingIndicator(user_role) {
-    clearTimeout(typingTimeout);
-    const el = document.createElement('div'); el.className = 'typing'; el.id = 'typingIndicator';
-    el.innerHTML = `<span class="dot"></span><span class="dot" style="animation-delay:.2s"></span><span class="dot" style="animation-delay:.4s"></span><span style="margin-left:8px;color:var(--muted)">${user_role || 'User'} is typing…</span>`;
-    messagesEl.appendChild(el);
-    el.scrollIntoView({ behavior:'smooth', block:'end' });
-    typingTimeout = setTimeout(()=> document.getElementById('typingIndicator')?.remove(), 2500);
-  }
-
-  /* Refresh & init */
-  refreshBtn?.addEventListener('click', loadConversations);
-  loadConversations();
-});
+// ===== INIT =====
+document.addEventListener('DOMContentLoaded', () => ChatApp.init());

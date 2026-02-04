@@ -165,10 +165,41 @@ Online Admissions Portal
 
     return send_email(applicant.email, subject, body)
 
-def send_approval_credentials_email(applicant, username, student_id, temp_password):
+def send_approval_credentials_email(applicant, username, student_id, temp_password, fees_info=None):
     name = _get_applicant_name(applicant)
 
     subject = "Your Student Account is Ready – Online Admissions Portal"
+
+    fees_section = ""
+    if fees_info:
+        fees_section = f"""
+    <hr>
+    <h3>Programme Fees</h3>
+    <p><b>Programme:</b> {fees_info.get('programme_name', 'N/A')}</p>
+    <table style="border-collapse: collapse; width: 100%; margin-top: 10px;">
+        <tr style="background-color: #f2f2f2;">
+            <th style="border: 1px solid #ddd; padding: 8px; text-align: left;">Fee Component</th>
+            <th style="border: 1px solid #ddd; padding: 8px; text-align: right;">Amount (GHS)</th>
+        </tr>
+"""
+        total_fees = 0
+        for fee in fees_info.get('fees', []):
+            amount = float(fee.get('amount', 0))
+            total_fees += amount
+            fees_section += f"""
+        <tr>
+            <td style="border: 1px solid #ddd; padding: 8px;">{fee.get('description', 'Fee')}</td>
+            <td style="border: 1px solid #ddd; padding: 8px; text-align: right;">{amount:,.2f}</td>
+        </tr>
+"""
+        fees_section += f"""
+        <tr style="background-color: #f2f2f2; font-weight: bold;">
+            <td style="border: 1px solid #ddd; padding: 8px;">Total</td>
+            <td style="border: 1px solid #ddd; padding: 8px; text-align: right;">{total_fees:,.2f}</td>
+        </tr>
+    </table>
+    <p style="margin-top: 10px;">You will be prompted to pay these fees upon login to your student portal.</p>
+        """
 
     body = f"""
     <p>Dear {name},</p>
@@ -185,9 +216,11 @@ def send_approval_credentials_email(applicant, username, student_id, temp_passwo
 
     <p>
         Please log in immediately at
-        <a href="{url_for('auth.login', _external=True)}">Online Admissions Portal</a>
+        <a href="{url_for('admissions.login', _external=True)}">Online Admissions Portal</a>
         and change your password.
     </p>
+
+    {fees_section}
 
     <p>Admissions Office<br>Online Admissions Portal</p>
     """

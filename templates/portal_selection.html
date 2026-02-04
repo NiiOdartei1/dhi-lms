@@ -135,7 +135,6 @@
 .tile-exams  .tile-icon { background: linear-gradient(135deg,#7c3aed,#2563eb); }
 .tile-teacher .tile-icon { background: linear-gradient(135deg,#10b981,#047857); }
 .tile-student .tile-icon { background: linear-gradient(135deg,#3b82f6,#1e40af); }
-.tile-parent  .tile-icon { background: linear-gradient(135deg,#f59e0b,#d97706); color:#111;}
 .tile-vclass  .tile-icon { background: linear-gradient(135deg,#06b6d4,#0ea5a4); }
 
 /* helpers */
@@ -169,7 +168,7 @@
       </div>
 
       <p class="brand-sub">
-        MyLMS brings together teachers, students and parents on a modern, secure platform.
+        MyLMS brings together teachers and students on a modern, secure platform.
         Manage attendance, assignments, exams, results and live classes from one central place.
       </p>
 
@@ -198,15 +197,15 @@
 
       <div class="tiles-grid" role="list" aria-label="Portal tiles">
 
-        <!-- EXAMS -->
-        <div class="tile tile-exams" role="listitem" tabindex="0"
-             data-href="{{ url_for('redirect_to_portal', portal='exams') }}" aria-label="Exams portal">
+        <!-- STUDENTS -->
+        <div class="tile tile-student" role="listitem" tabindex="0"
+             data-href="{{ url_for('redirect_to_portal', portal='students') }}" aria-label="Students portal">
           <div class="tile-icon" aria-hidden="true">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M5 3h14v2H5z" fill="currentColor"/><rect x="4" y="6" width="16" height="14" rx="1.5" fill="currentColor" opacity="0.95"/></svg>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M12 3L2 8l10 5 10-5-10-5z" fill="currentColor"/><path d="M4 9v4a8 8 0 0 0 8 8 8 8 0 0 0 8-8V9" stroke="rgba(255,255,255,0.9)" stroke-width="1"/></svg>
           </div>
           <div>
-            <div class="tile-title">Exams</div>
-            <div class="tile-desc">Secure, timed and proctored tests; schedules & results.</div>
+            <div class="tile-title">Students</div>
+            <div class="tile-desc">Access course materials, submit assignments and view grades.</div>
           </div>
         </div>
 
@@ -220,31 +219,7 @@
             <div class="tile-title">Teachers</div>
             <div class="tile-desc">Create courses, grade submissions and manage classes.</div>
           </div>
-        </div>
-
-        <!-- STUDENTS -->
-        <div class="tile tile-student" role="listitem" tabindex="0"
-             data-href="{{ url_for('redirect_to_portal', portal='students') }}" aria-label="Students portal">
-          <div class="tile-icon" aria-hidden="true">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M12 3L2 8l10 5 10-5-10-5z" fill="currentColor"/><path d="M4 9v4a8 8 0 0 0 8 8 8 8 0 0 0 8-8V9" stroke="rgba(255,255,255,0.9)" stroke-width="1"/></svg>
-          </div>
-          <div>
-            <div class="tile-title">Students</div>
-            <div class="tile-desc">Access course materials, submit assignments and view grades.</div>
-          </div>
-        </div>
-
-        <!-- PARENTS -->
-        <div class="tile tile-parent" role="listitem" tabindex="0"
-             data-href="{{ url_for('redirect_to_portal', portal='parents') }}" aria-label="Parents portal">
-          <div class="tile-icon" aria-hidden="true">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M7 7a2 2 0 1 0 0-4 2 2 0 0 0 0 4zM17 7a2 2 0 1 0 0-4 2 2 0 0 0 0 4z" fill="currentColor"/><path d="M2 20c0-3 2.5-5 5-5h10c2.5 0 5 2 5 5" stroke="rgba(255,255,255,0.92)" stroke-width="1.1"/></svg>
-          </div>
-          <div>
-            <div class="tile-title">Parents</div>
-            <div class="tile-desc">Monitor attendance, receive reports and communicate with teachers.</div>
-          </div>
-        </div>
+        </div>      
 
         <!-- VCLASS -->
         <div class="tile tile-vclass" role="listitem" tabindex="0"
@@ -258,6 +233,17 @@
           </div>
         </div>
 
+        <!-- EXAMS -->
+        <div class="tile tile-exams" role="listitem" tabindex="0"
+             data-href="{{ url_for('redirect_to_portal', portal='exams') }}" aria-label="Exams portal">
+          <div class="tile-icon" aria-hidden="true">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M5 3h14v2H5z" fill="currentColor"/><rect x="4" y="6" width="16" height="14" rx="1.5" fill="currentColor" opacity="0.95"/></svg>
+          </div>
+          <div>
+            <div class="tile-title">Exams</div>
+            <div class="tile-desc">Secure, timed and proctored tests; schedules & results.</div>
+          </div>
+        </div>
       </div>
 
       <div class="help-note">If you don’t have an account or can’t log in, contact your school administrator.</div>

@@ -1,0 +1,136 @@
+{% extends 'teacher/base_teacher.html' %}
+{% block title %}Exam Sets | {{ exam.title }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+
+  <!-- PAGE HEADER -->
+  <div class="card shadow-sm border-0 mb-4">
+    <div class="card-body d-flex justify-content-between align-items-center flex-wrap">
+      <div>
+        <h3 class="mb-1 fw-bold">Exam Sets</h3>
+        <div class="text-muted small">Managing sets for: <strong>{{ exam.title }}</strong></div>
+      </div>
+      <div class="mt-2 mt-md-0">
+        <a href="{{ url_for('teacher.create_exam_set', exam_id=exam.id) }}" class="btn btn-primary me-2">
+          <i class="bi bi-plus-circle"></i> New Set
+        </a>
+        <a href="{{ url_for('teacher.create_exam_question', exam_id=exam.id) }}" class="btn btn-outline-primary">
+          <i class="bi bi-journal-plus"></i> Add Question
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-4">
+
+    <!-- ================= SETS PANEL ================= -->
+    <div class="col-lg-4">
+      <div class="card shadow-sm border-0 h-100">
+        <div class="card-header bg-light fw-semibold">
+          <i class="bi bi-collection"></i> Exam Sets
+        </div>
+        <div class="card-body p-2">
+
+          {% if sets %}
+            {% for s in sets %}
+            <div class="border rounded p-3 mb-2 hover-shadow-sm">
+              <div class="d-flex justify-content-between align-items-start">
+                <div>
+                  <div class="fw-semibold">{{ s.name }}</div>
+                  {% if s.max_score %}
+                    <span class="badge bg-info text-dark mt-1">Max Score: {{ s.max_score }}</span>
+                  {% endif %}
+                </div>
+
+                <div class="text-end">
+                  <a href="{{ url_for('teacher.edit_exam_set', exam_id=exam.id, set_id=s.id) }}"
+                     class="btn btn-sm btn-primary mb-1 w-100">
+                    Manage
+                  </a>
+
+                  <a href="{{ url_for('teacher.edit_exam_set', exam_id=exam.id, set_id=s.id) }}"
+                     class="btn btn-sm btn-outline-secondary mb-1 w-100">
+                    Rename
+                  </a>
+
+                  <form action="{{ url_for('teacher.delete_exam_set', exam_id=exam.id, set_id=s.id) }}"
+                        method="POST">
+                    <button type="submit" class="btn btn-sm btn-outline-danger w-100"
+                            onclick="return confirm('Delete this set?')">
+                      Delete
+                    </button>
+                  </form>
+                </div>
+              </div>
+            </div>
+            {% endfor %}
+          {% else %}
+            <div class="text-center text-muted py-4">
+              <i class="bi bi-folder2-open" style="font-size: 28px;"></i>
+              <div>No sets created yet</div>
+            </div>
+          {% endif %}
+
+        </div>
+      </div>
+    </div>
+
+    <!-- ================= QUESTION POOL ================= -->
+    <div class="col-lg-8">
+      <div class="card shadow-sm border-0 h-100">
+        <div class="card-header bg-light fw-semibold d-flex justify-content-between align-items-center">
+          <span><i class="bi bi-patch-question"></i> Question Pool</span>
+          <span class="badge bg-secondary">{{ pool_questions|length }} Questions</span>
+        </div>
+
+        <div class="card-body">
+
+          {% if pool_questions %}
+            {% for q in pool_questions %}
+            <div class="border rounded p-3 mb-3 hover-shadow-sm">
+              <div class="d-flex justify-content-between">
+
+                <div class="me-3">
+                  <div class="fw-semibold mb-1">
+                    {{ q.question_text[:140] }}{% if q.question_text|length > 140 %}...{% endif %}
+                  </div>
+                  <div class="small text-muted">
+                    <span class="badge bg-light text-dark border me-2">{{ q.question_type }}</span>
+                    <span class="badge bg-success">{{ q.marks }} Marks</span>
+                  </div>
+                </div>
+
+                <div class="text-end">
+                  <a href="{{ url_for('teacher.edit_exam_question', exam_id=exam.id, question_id=q.id) }}"
+                     class="btn btn-sm btn-outline-primary mb-1 w-100">
+                    Edit
+                  </a>
+
+                  <form action="{{ url_for('teacher.delete_exam_question', exam_id=exam.id, question_id=q.id) }}"
+                        method="POST">
+                    <button type="submit" class="btn btn-sm btn-outline-danger w-100"
+                            onclick="return confirm('Delete this question?')">
+                      Delete
+                    </button>
+                  </form>
+                </div>
+
+              </div>
+            </div>
+            {% endfor %}
+          {% else %}
+            <div class="text-center text-muted py-5">
+              <i class="bi bi-question-circle" style="font-size: 32px;"></i>
+              <div>No questions in pool</div>
+              <small>Click “Add Question” to start building the exam.</small>
+            </div>
+          {% endif %}
+
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+{% endblock %}

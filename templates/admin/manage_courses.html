@@ -9,14 +9,14 @@
     <h2 class="fw-bold text-primary">
       <i class="fas fa-book-open"></i> Manage Courses
     </h2>
-    <a href="{{ url_for('admin.add_course') }}" class="btn btn-success shadow-sm">
+    <a href="{{ url_for('admin.add_programme_course') }}" class="btn btn-success shadow-sm">
       <i class="fas fa-plus-circle"></i> Add Course
     </a>
   </div>
 
   <!-- Registration Window -->
   <div class="card shadow-sm border-0 mb-4">
-    <div class="card-header bg-gradient text-white"
+    <div class="card-header text-white"
          style="background: linear-gradient(90deg, #1d4ed8, #22c55e);">
       <i class="fas fa-calendar-alt"></i> Course Registration Window
     </div>
@@ -53,9 +53,9 @@
 
   <!-- Search + Filters -->
   <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center mb-3 gap-2">
-    <input type="text" id="courseSearch" class="form-control w-100 w-md-50"
+    <input type="text" id="courseSearch" class="form-control"
            placeholder="🔍 Search courses by name or code...">
-    <select id="filterType" class="form-select w-100 w-md-25">
+    <select id="filterType" class="form-select">
       <option value="">Filter by Type</option>
       <option value="Mandatory">Mandatory</option>
       <option value="Optional">Optional</option>
@@ -69,10 +69,10 @@
         <tr>
           <th>Code</th>
           <th>Name</th>
-          <th>Class</th>
+          <th>Programme Level</th>  <!-- CHANGED -->
           <th>Semester</th>
           <th>Credit Hours</th>
-          <th>Year</th>
+          <th>Academic Year</th>
           <th>Type</th>
           <th class="text-center">Actions</th>
         </tr>
@@ -82,10 +82,18 @@
         <tr>
           <td><span class="fw-bold text-primary">{{ c.code }}</span></td>
           <td>{{ c.name }}</td>
-          <td><span class="badge bg-secondary">{{ c.assigned_class }}</span></td>
+
+          <!-- PROGRAMME LEVEL INSTEAD OF CLASS -->
+          <td>
+            <span class="badge bg-secondary">
+              Level {{ c.programme_level }}
+            </span>
+          </td>
+
           <td><span class="badge bg-info">{{ c.semester }}</span></td>
           <td><span class="badge bg-primary">{{ c.credit_hours }}</span></td>
-          <td>{{ c.academic_year }}</td>
+          <td>{{ c.academic_year|start_year }}</td>
+
           <td>
             {% if c.is_mandatory %}
               <span class="badge bg-danger"><i class="fas fa-lock"></i> Mandatory</span>
@@ -93,6 +101,7 @@
               <span class="badge bg-success"><i class="fas fa-unlock"></i> Optional</span>
             {% endif %}
           </td>
+
           <td class="text-center">
             <a href="{{ url_for('admin.edit_course', course_id=c.id) }}"
                class="btn btn-sm btn-warning" data-bs-toggle="tooltip" title="Edit Course">
@@ -131,12 +140,15 @@ document.addEventListener("DOMContentLoaded", function () {
   function filterCourses() {
     const search = searchInput.value.toLowerCase();
     const type = filterType.value;
+
     rows.forEach(row => {
       const code = row.children[0]?.innerText.toLowerCase() || "";
       const name = row.children[1]?.innerText.toLowerCase() || "";
-      const typeText = row.children[5]?.innerText || "";
+      const typeText = row.children[6]?.innerText || ""; // column index updated
+
       const matchSearch = code.includes(search) || name.includes(search);
       const matchType = !type || typeText.includes(type);
+
       row.style.display = matchSearch && matchType ? "" : "none";
     });
   }
@@ -144,9 +156,9 @@ document.addEventListener("DOMContentLoaded", function () {
   searchInput.addEventListener("input", filterCourses);
   filterType.addEventListener("change", filterCourses);
 
-  // Bootstrap tooltips
   const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
   tooltipTriggerList.map(el => new bootstrap.Tooltip(el));
 });
 </script>
+
 {% endblock %}

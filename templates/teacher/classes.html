@@ -131,7 +131,7 @@
     <div class="ms-auto d-flex gap-2 align-items-center">
       <div class="input-group search-input">
         <span class="input-group-text bg-transparent"><i class="fas fa-search"></i></span>
-        <input id="tableSearch" class="form-control" placeholder="Search by class or course..." aria-label="Search courses">
+        <input id="tableSearch" class="form-control" placeholder="Search by programme, level or course..." aria-label="Search courses">
       </div>
       <button id="btnSelectVisible" class="btn btn-outline-primary" title="Select all visible">
         <i class="fas fa-check-double me-1"></i> Select Visible
@@ -149,7 +149,7 @@
       <div class="d-flex align-items-center justify-content-between mb-2">
         <div>
           <strong class="text-muted">Available courses</strong>
-          <div class="small text-muted">Select the classes that you will teach this term</div>
+          <div class="small text-muted">Select the programmes / levels that you will teach this term</div>
         </div>
 
         <div class="d-flex gap-2 align-items-center">
@@ -164,18 +164,24 @@
           <thead>
             <tr>
               <th class="col-select"><input id="masterCheckbox" type="checkbox" title="Select all"></th>
-              <th>Class</th>
+              <th>Programme</th>
+              <th>Level</th>
               <th>Course Name</th>
             </tr>
           </thead>
           <tbody id="coursesTableBody">
             {% for c in courses %}
-            <tr data-id="{{ c.id }}" data-name="{{ c.name|e }}" data-class="{{ c.class|e }}">
+            <tr
+                data-id="{{ c.id }}"
+                data-name="{{ c.name|e }}"
+                data-programme="{{ (c.programme_name or '')|e }}"
+                data-level="{{ (c.programme_level or '')|e }}">
               <td class="col-select">
                 <input class="rowCheckbox" type="checkbox" name="courses" value="{{ c.id }}"
                        {% if c.registered %}checked{% endif %} aria-label="Select {{ c.name }}">
               </td>
-              <td>{{ c.class }}</td>
+              <td>{{ c.programme_name or '—' }}</td>
+              <td>{{ c.programme_level or '—' }}</td>
               <td>{{ c.name }}</td>
             </tr>
             {% endfor %}
@@ -235,7 +241,9 @@
       const cb = row.querySelector('.rowCheckbox');
       if (cb && cb.checked) row.classList.add('selected'); else row.classList.remove('selected');
     });
-    masterCheckbox.checked = (checkboxes().length > 0 && checked.length === checkboxes().length);
+    // master checkbox reflects visible row selection
+    const visibleCheckboxes = Array.from(document.querySelectorAll('#coursesTableBody tr')).filter(r => r.style.display !== 'none').map(r => r.querySelector('.rowCheckbox')).filter(Boolean);
+    masterCheckbox.checked = visibleCheckboxes.length > 0 && visibleCheckboxes.every(cb => cb.checked);
   }
 
   // init
@@ -275,7 +283,10 @@
   // select visible button
   btnSelectVisible.addEventListener('click', () => {
     const visibleRows = Array.from(document.querySelectorAll('#coursesTableBody tr')).filter(r => r.style.display !== 'none');
-    visibleRows.forEach(row => row.querySelector('.rowCheckbox').checked = true);
+    visibleRows.forEach(row => {
+      const cb = row.querySelector('.rowCheckbox');
+      if (cb) cb.checked = true;
+    });
     updateSelectedUI();
   });
 
@@ -291,13 +302,14 @@
     updateSelectedUI();
   });
 
-  // live search filter
+  // live search filter (programme, level, course)
   tableSearch.addEventListener('input', () => {
     const q = tableSearch.value.trim().toLowerCase();
     document.querySelectorAll('#coursesTableBody tr').forEach(row => {
       const name = (row.dataset.name || '').toLowerCase();
-      const cls = (row.dataset.class || '').toLowerCase();
-      const match = q === '' || name.includes(q) || cls.includes(q);
+      const programme = (row.dataset.programme || '').toLowerCase();
+      const level = (row.dataset.level || '').toLowerCase();
+      const match = q === '' || name.includes(q) || programme.includes(q) || level.includes(q);
       row.style.display = match ? '' : 'none';
     });
     // After filtering, recompute master checkbox state:
@@ -314,11 +326,12 @@
     } else {
       checked.forEach(cb => {
         const tr = cb.closest('tr');
-        const name = tr.dataset.name || tr.cells[2].innerText;
-        const cls = tr.dataset.class || tr.cells[1].innerText;
+        const name = tr.dataset.name || tr.cells[3].innerText;
+        const programme = tr.dataset.programme || tr.cells[1].innerText;
+        const level = tr.dataset.level || tr.cells[2].innerText;
         const item = document.createElement('div');
         item.className = 'd-flex justify-content-between align-items-center py-1';
-        item.innerHTML = `<div><strong class="me-2">${cls}</strong> — ${name}</div>
+        item.innerHTML = `<div><strong class="me-2">${programme} (Level ${level})</strong> — ${name}</div>
                           <div class="text-muted small">ID: ${cb.value}</div>`;
         selectedList.appendChild(item);
       });

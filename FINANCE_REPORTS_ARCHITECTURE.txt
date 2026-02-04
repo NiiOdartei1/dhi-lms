@@ -1,0 +1,341 @@
+"""
+FINANCE REPORTS SYSTEM ARCHITECTURE & WORKFLOW
+
+This document provides a visual overview of the system structure.
+"""
+
+SYSTEM_ARCHITECTURE = """
+
+┌─────────────────────────────────────────────────────────────────┐
+│                    FINANCE REPORTS SYSTEM                        │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│                      BROWSER / CLIENT                            │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  ┌──────────────────────────────────────────────────────────┐   │
+│  │  finance_reports.html (Template)                         │   │
+│  ├──────────────────────────────────────────────────────────┤   │
+│  │  • HTML Structure                                        │   │
+│  │  • Bootstrap 5 Styling                                  │   │
+│  │  • Chart.js Integration                                 │   │
+│  │  • Tab Navigation                                       │   │
+│  │  • Interactive Elements                                 │   │
+│  └──────────────────────────────────────────────────────────┘   │
+│           ↓                                      ↑                │
+│    JAVASCRIPT                            RENDERED HTML            │
+│                                                                  │
+│  ┌──────────────────────────────────────────────────────────┐   │
+│  │  JavaScript Functions                                   │   │
+│  ├──────────────────────────────────────────────────────────┤   │
+│  │  • switchTab(tabName, event)         - Tab switching    │   │
+│  │  • loadDailyReport()                 - Daily data       │   │
+│  │  • loadWeeklyReport()                - Weekly data      │   │
+│  │  • loadMonthlyReport()               - Monthly data     │   │
+│  │  • loadTodayTransactions()           - Transactions     │   │
+│  │  • exportReport()                    - Export feature   │   │
+│  │  • Chart initialization & management                    │   │
+│  └──────────────────────────────────────────────────────────┘   │
+│           ↓ HTTP AJAX Calls                                      │
+└─────────────────────────────────────────────────────────────────┘
+           ↓ JSON Responses
+           ↑
+┌─────────────────────────────────────────────────────────────────┐
+│                      FLASK BACKEND                               │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  finance_routes.py (Blueprint: finance_bp)                       │
+│                                                                  │
+│  ┌──────────────────────────────────────────────────────────┐   │
+│  │  ROUTES (Entry Points)                                   │   │
+│  ├──────────────────────────────────────────────────────────┤   │
+│  │  GET /admin/finance/reports                             │   │
+│  │      └─ Returns HTML template with initial data         │   │
+│  │                                                          │   │
+│  │  GET /admin/finance/api/reports/daily                   │   │
+│  │      └─ Returns JSON with daily analytics               │   │
+│  │                                                          │   │
+│  │  GET /admin/finance/api/reports/weekly                  │   │
+│  │      └─ Returns JSON with weekly analytics              │   │
+│  │                                                          │   │
+│  │  GET /admin/finance/api/reports/monthly                 │   │
+│  │      └─ Returns JSON with monthly analytics             │   │
+│  │                                                          │   │
+│  │  GET /admin/finance/api/reports/transactions            │   │
+│  │      └─ Returns JSON with paginated transactions        │   │
+│  └──────────────────────────────────────────────────────────┘   │
+│           ↓                                      ↑                │
+│    REQUEST HANDLING                     DATA AGGREGATION         │
+│                                                                  │
+│  ┌──────────────────────────────────────────────────────────┐   │
+│  │  HELPER FUNCTIONS (Data Processing)                     │   │
+│  ├──────────────────────────────────────────────────────────┤   │
+│  │                                                          │   │
+│  │  Daily Analysis:                                         │   │
+│  │  ├─ get_daily_revenue(days=30)                          │   │
+│  │  ├─ get_today_transactions_count()                      │   │
+│  │  └─ get_financial_summary()                             │   │
+│  │                                                          │   │
+│  │  Weekly Analysis:                                        │   │
+│  │  └─ get_weekly_revenue()                                │   │
+│  │                                                          │   │
+│  │  Monthly Analysis:                                       │   │
+│  │  ├─ get_monthly_revenue(months=12)                      │   │
+│  │  └─ get_department_breakdown()                          │   │
+│  │                                                          │   │
+│  │  Additional:                                             │   │
+│  │  ├─ get_payment_method_breakdown()                      │   │
+│  │  └─ get_top_debtors(limit=20)                           │   │
+│  │                                                          │   │
+│  └──────────────────────────────────────────────────────────┘   │
+│           ↓                                      ↑                │
+│    PROCESSING                          DATABASE QUERIES         │
+│                                                                  │
+│  ┌──────────────────────────────────────────────────────────┐   │
+│  │  SECURITY & PERMISSIONS                                 │   │
+│  ├──────────────────────────────────────────────────────────┤   │
+│  │  • @login_required - User authentication                │   │
+│  │  • @require_finance_admin - Role-based access          │   │
+│  │  • CSRF protection - Form security                      │   │
+│  │  • Error handling - Safe failures                       │   │
+│  │  • Logging - Debug trail                                │   │
+│  └──────────────────────────────────────────────────────────┘   │
+│           ↓                                      ↑                │
+└─────────────────────────────────────────────────────────────────┘
+           ↓ SQL Queries / ORM
+           ↑ Results
+┌─────────────────────────────────────────────────────────────────┐
+│                      DATABASE                                    │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  Tables Used:                                                    │
+│  ├─ student_fee_transaction                                    │
+│  │  ├─ id, amount, timestamp, is_approved, description        │
+│  │  └─ student_id (FK)                                         │
+│  │                                                              │
+│  ├─ student_fee_balance                                        │
+│  │  ├─ student_id, amount_due, amount_paid, balance           │
+│  │  └─ (calculations)                                          │
+│  │                                                              │
+│  ├─ user                                                       │
+│  │  ├─ user_id, first_name, middle_name, last_name           │
+│  │  └─ (primary key for joins)                                │
+│  │                                                              │
+│  └─ student_profile                                            │
+│     ├─ student_id, programme                                   │
+│     └─ (department information)                                │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+
+
+DATA FLOW EXAMPLES
+═════════════════════════════════════════════════════════════════
+
+EXAMPLE 1: Load Daily Report
+─────────────────────────────
+1. User clicks "Daily Report" tab
+2. JavaScript calls switchTab('daily', event)
+3. JavaScript calls fetch('/admin/finance/api/reports/daily')
+4. Flask handler @ GET /api/reports/daily executes
+5. Handler calls get_daily_revenue(days=30)
+6. Function queries database:
+   SELECT DATE(timestamp), SUM(amount) FROM student_fee_transaction
+   WHERE is_approved=True GROUP BY DATE(timestamp)
+7. Results aggregated into daily_revenue list
+8. JSON response sent to browser
+9. JavaScript populates stat cards and renders Line chart
+10. User sees visualization of daily trends
+
+
+EXAMPLE 2: Load Weekly Report  
+──────────────────────────────
+1. User clicks "Weekly Report" tab
+2. JavaScript calls switchTab('weekly', event)
+3. JavaScript calls fetch('/admin/finance/api/reports/weekly')
+4. Flask handler @ GET /api/reports/weekly executes
+5. Handler calls get_weekly_revenue()
+6. Function calculates week boundaries and queries:
+   - Current week: 7 separate queries or 1 grouped query
+   - Last week: 7 separate queries or 1 grouped query
+7. Compares current_week total vs last_week total
+8. Calculates trend percentage
+9. JSON response with arrays sent to browser
+10. JavaScript renders:
+    - Bar chart for current week
+    - Comparison chart (current vs last week)
+    - Trend indicator (↑ percentage)
+
+
+EXAMPLE 3: Load Transactions
+────────────────────────────
+1. User scrolls to transactions section
+2. JavaScript calls loadTodayTransactions()
+3. JavaScript calls fetch('/admin/finance/api/reports/transactions?period=today')
+4. Flask handler @ GET /api/reports/transactions executes
+5. Handler filters transactions by date and paginates:
+   SELECT * FROM student_fee_transaction 
+   JOIN user ON student_id = user.user_id
+   WHERE DATE(timestamp) = TODAY()
+   LIMIT 10 OFFSET 0
+6. Formats results with student names and status
+7. Returns JSON with transaction array
+8. JavaScript populates table rows with data
+9. User sees list of today's payments
+
+
+REPORT TABS STRUCTURE
+════════════════════════════════════════════════════════════════
+
+┌─ Tab Navigation
+│  ├─ Daily Report    (loadDailyReport)
+│  ├─ Weekly Report   (loadWeeklyReport)
+│  └─ Monthly Report  (loadMonthlyReport)
+│
+├─ Daily Report Content
+│  ├─ Stat Cards
+│  │  ├─ Today's Revenue (GHS)
+│  │  ├─ Today's Transactions (count)
+│  │  ├─ Average Transaction (GHS)
+│  │  └─ Pending Approvals (count)
+│  ├─ Charts
+│  │  └─ 30-day Revenue (Line Chart)
+│  └─ Table
+│     └─ Today's Transactions
+│
+├─ Weekly Report Content
+│  ├─ Stat Cards
+│  │  ├─ Week's Revenue (GHS)
+│  │  ├─ Weekly Transactions (count)
+│  │  ├─ Best Day (day name)
+│  │  └─ Trend (percentage ↑↓)
+│  ├─ Charts
+│  │  ├─ Weekly Revenue Breakdown (Bar Chart)
+│  │  └─ Week Comparison (Bar Chart)
+│  └─ Summary Card
+│     └─ Weekly Overview
+│
+└─ Monthly Report Content
+   ├─ Stat Cards
+   │  ├─ Month's Revenue (GHS)
+   │  ├─ Monthly Transactions (count)
+   │  ├─ Collection Rate (%)
+   │  └─ Outstanding Balance (GHS)
+   ├─ Charts
+   │  ├─ Monthly Trend (Line Chart)
+   │  └─ Department Breakdown (Pie Chart)
+   ├─ Comparison
+   │  ├─ Current Month (GHS)
+   │  └─ Year-to-Date (GHS)
+   └─ Table
+      └─ Detailed Monthly Breakdown
+
+
+PERMISSION FLOW
+════════════════════════════════════════════════════════════════
+
+User Requests /admin/finance/reports
+        ↓
+@login_required decorator
+        ↓
+    User logged in? → Yes → Continue
+        ↓ No
+    Redirect to login
+        ↓
+@require_finance_admin decorator
+        ↓
+    User is Admin? → No → Abort 403
+        ↓ Yes
+    User is finance_admin or superadmin? → No → Abort 403
+        ↓ Yes
+Continue to report handler
+        ↓
+get_financial_summary()
+get_daily_revenue()
+get_payment_methods()
+get_top_debtors()
+        ↓
+Render template with data
+        ↓
+User sees Finance Reports Page
+
+
+ERROR HANDLING FLOW
+════════════════════════════════════════════════════════════════
+
+Function executes
+        ↓
+Try block
+        ↓
+    Exception caught? → No → Return success
+        ↓ Yes
+Except block executes
+        ↓
+logger.exception(error)
+        ↓
+Return empty list / default values
+        ↓
+Frontend gracefully handles empty data
+        ↓
+User sees "No data available" message
+        ↓
+Debugging info in console
+
+
+CHART LIFECYCLE
+════════════════════════════════════════════════════════════════
+
+1. Page loads
+   ↓
+2. DOMContentLoaded event fires
+   ↓
+3. loadDailyReport() called
+   ↓
+4. Chart data prepared from daily_revenue
+   ↓
+5. New Chart instance created
+   ↓
+6. Chart renders on canvas
+   ↓
+7. User sees visualization
+   ↓
+8. User switches tab
+   ↓
+9. if (charts.daily) charts.daily.destroy()
+   ↓
+10. Old chart destroyed from memory
+    ↓
+11. New chart initialized for new tab
+    ↓
+12. Process repeats
+
+
+PERFORMANCE CONSIDERATIONS
+════════════════════════════════════════════════════════════════
+
+Database Level:
+├─ Indexes on timestamp columns
+├─ Indexes on is_approved flag
+└─ Join optimization
+
+Query Level:
+├─ Aggregation in database (not in Python)
+├─ Grouping by date for efficiency
+├─ Filtering before grouping
+└─ Pagination for large result sets
+
+Application Level:
+├─ Error handling for graceful failures
+├─ Logging for debugging
+└─ Proper resource cleanup
+
+Frontend Level:
+├─ Chart destruction on tab switch
+├─ Lazy loading (charts on demand)
+├─ Event delegation where possible
+├─ Efficient DOM manipulation
+└─ Minimal re-renders
+
+"""
+
+print(SYSTEM_ARCHITECTURE)

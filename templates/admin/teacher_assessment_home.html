@@ -11,7 +11,7 @@
   {% if active_period %}
     <div class="alert alert-success">
       <strong>Active Period:</strong>
-      {{ active_period.academic_year }} —
+      {{ active_period.academic_year|start_year }} —
       {{ active_period.semester }}
     </div>
   {% else %}

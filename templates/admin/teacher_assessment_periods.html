@@ -27,7 +27,7 @@
       <tbody>
         {% for p in periods %}
         <tr>
-          <td>{{ p.academic_year }}</td>
+          <td>{{ p.academic_year|start_year }}</td>
           <td>{{ p.semester }}</td>
           <td>{{ p.start_date }} → {{ p.end_date }}</td>
           <td>

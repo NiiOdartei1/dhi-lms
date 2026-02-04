@@ -1,3 +1,7 @@
+<!-- ===================================================================== -->
+<!-- STUDENT PROFILE PAGE (Tertiary Version) -->
+<!-- ===================================================================== -->
+
 {% extends 'student/base_student.html' %}
 {% block title %}My Profile{% endblock %}
 
@@ -78,11 +82,19 @@
   <div class="row profile-container">
     <!-- LEFT PANEL -->
     <div class="col-md-4 profile-left text-center p-4">
-      <img src="{{ user.profile_picture_url or url_for('static', filename='img/default_profile.png') }}"
-           alt="Profile Picture" class="profile-pic shadow-sm mb-3">
+      {% if user.profile_picture %}
+          <img src="{{ user.profile_picture_url }}"
+            alt="Profile Picture"
+            class="profile-pic shadow-sm mb-3">
+      {% else %}
+        <img src="{{ url_for('static', filename='img/default_profile.png') }}"
+            alt="Profile Picture"
+            class="profile-pic shadow-sm mb-3">
+      {% endif %}
 
       <h5>{{ user.full_name }}</h5>
-      <p class="text-muted mb-1">{{ profile.current_class or 'Student' }}</p>
+      <!-- TERTIARY: Show programme and level -->
+      <p class="text-muted mb-1">{{ profile.current_programme or 'Programme' }} - Level {{ profile.programme_level or '100' }}</p>
       <p><i class="bi bi-envelope me-1"></i>{{ profile.email or user.email }}</p>
       <hr>
       <div class="text-start ps-md-3">
@@ -104,52 +116,39 @@
           <div class="card-body">
             <p><span class="info-label">Date of Birth:</span> {{ profile.dob.strftime('%B %d, %Y') if profile.dob else 'N/A' }}</p>
             <p><span class="info-label">Gender:</span> {{ profile.gender or 'N/A' }}</p>
-            <p><span class="info-label">Blood Group:</span> {{ profile.blood_group or 'N/A' }}</p>
-            <p><span class="info-label">Medical Conditions:</span> {{ profile.medical_conditions or 'None' }}</p>
+            <p><span class="info-label">Nationality:</span> {{ profile.nationality or 'N/A' }}</p>
+            <p><span class="info-label">Religion:</span> {{ profile.religion or 'N/A' }}</p>
           </div>
         </div>
 
-        <!-- Academic Info -->
+        <!-- Academic Info (TERTIARY) -->
         <div class="info-card">
           <div class="card-header">
             <i class="bi bi-mortarboard-fill me-2"></i>Academic Information
           </div>
           <div class="card-body">
-            <p><span class="info-label">Current Class:</span> {{ profile.current_class or 'N/A' }}</p>
+            <p><span class="info-label">Programme:</span> {{ profile.current_programme or 'N/A' }}</p>
+            <p><span class="info-label">Level:</span> {{ profile.programme_level or 'N/A' }}</p>
+            <p><span class="info-label">Study Format:</span> {{ profile.study_format or 'Regular' }}</p>
+            <p><span class="info-label">Index Number:</span> {{ profile.index_number or 'N/A' }}</p>
             <p><span class="info-label">Academic Year:</span> {{ profile.academic_year or 'N/A' }}</p>
-            <p><span class="info-label">Preferred 2nd Language:</span> {{ profile.preferred_second_language or 'N/A' }}</p>
-            <p><span class="info-label">Previous School:</span> {{ profile.previous_school or 'N/A' }}</p>
-            <p><span class="info-label">Last Class Completed:</span> {{ profile.last_class_completed or 'N/A' }}</p>
-            <p><span class="info-label">Academic Performance:</span> {{ profile.academic_performance or 'N/A' }}</p>
+            <p><span class="info-label">Semester:</span> {{ profile.semester or 'N/A' }}</p>
+            <p><span class="info-label">Academic Status:</span> {{ profile.academic_status or 'Active' }}</p>
+            <p><span class="info-label">Admission Date:</span> {{ profile.admission_date.strftime('%B %d, %Y') if profile.admission_date else 'N/A' }}</p>
           </div>
         </div>
 
-        <!-- Guardian Info -->
-        <div class="info-card">
+        <!-- Contact Info -->
+        <div class="info-card mb-0">
           <div class="card-header">
-            <i class="bi bi-people-fill me-2"></i>Guardian Information
+            <i class="bi bi-telephone-fill me-2"></i>Contact Information
           </div>
           <div class="card-body">
-            <p><span class="info-label">Name:</span> {{ profile.guardian_name or 'N/A' }}</p>
-            <p><span class="info-label">Relation:</span> {{ profile.guardian_relation or 'N/A' }}</p>
-            <p><span class="info-label">Contact:</span> {{ profile.guardian_contact or 'N/A' }}</p>
-          </div>
-        </div>
-
-        <!-- Emergency & Sibling Info -->
-        <div class="info-card mb-0">
-          <div class="card-header text-danger">
-            <i class="bi bi-exclamation-triangle-fill me-2"></i>Emergency & Sibling Information
-          </div>
-          <div class="card-body row">
-            <div class="col-md-6">
-              <p><span class="info-label">Emergency Contact Name:</span> {{ profile.emergency_contact_name or 'N/A' }}</p>
-              <p><span class="info-label">Emergency Contact Number:</span> {{ profile.emergency_contact_number or 'N/A' }}</p>
-            </div>
-            <div class="col-md-6">
-              <p><span class="info-label">Sibling Name:</span> {{ profile.sibling_name or 'N/A' }}</p>
-              <p><span class="info-label">Sibling Class:</span> {{ profile.sibling_class or 'N/A' }}</p>
-            </div>
+            <p><span class="info-label">Email:</span> {{ profile.email or 'N/A' }}</p>
+            <p><span class="info-label">Phone:</span> {{ profile.phone or 'N/A' }}</p>
+            <p><span class="info-label">Address:</span> {{ profile.address or 'N/A' }}</p>
+            <p><span class="info-label">City:</span> {{ profile.city or 'N/A' }}</p>
+            <p><span class="info-label">State/Province:</span> {{ profile.state or 'N/A' }}</p>
           </div>
         </div>
       </div>
