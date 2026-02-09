@@ -38,6 +38,24 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 app.config.from_object(Config)
 
+# Auto-initialize database for Render (runs on every startup in production)
+if os.environ.get('FLASK_ENV') == 'production':
+    with app.app_context():
+        try:
+            db.create_all()
+            logger.info("✓ Database tables created/verified on Render")
+            
+            # Create SuperAdmin if missing
+            if not Admin.query.filter_by(username='SuperAdmin').first():
+                admin = Admin(username='SuperAdmin', admin_id='ADM001')
+                admin.set_password('Password123')
+                Admin.apply_superadmin_preset(admin)
+                db.session.add(admin)
+                db.session.commit()
+                logger.info("✓ SuperAdmin created on Render")
+        except Exception as e:
+            logger.error(f"Database init error: {e}")
+
 IS_PRODUCTION = bool(
     app.config.get("IS_PRODUCTION")
     or os.environ.get("IS_PRODUCTION") in ("1", "true", "True")
