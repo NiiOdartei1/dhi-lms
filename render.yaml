@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: lms-web
+    name: dhi-online
     env: python
     plan: starter
     buildCommand: pip install -r requirements.txt

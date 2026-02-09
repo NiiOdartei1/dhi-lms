@@ -426,7 +426,7 @@ def download_registered_courses_pdf():
         
         # Generate PDF with logo
         import os
-        logo_path = os.path.join(os.path.dirname(__file__), 'static', 'NEW-DHI-LOGO.jpeg')
+        logo_path = os.path.join(os.path.dirname(__file__), 'static', 'DHI-LOGO.png')
         
         pdf = generate_course_registration_pdf(
             student=student,
