@@ -151,38 +151,87 @@ def initialize_database():
         # Handle circular dependency between question and options
         logger.info("🔄 Handling circular dependency for question/options tables...")
         try:
-            # Create question table without foreign key constraints first
             from sqlalchemy import text
             with db.engine.connect() as conn:
-                # Drop foreign key constraints if they exist
+                # Drop tables completely if they exist
                 try:
-                    conn.execute(text("ALTER TABLE question DROP CONSTRAINT IF EXISTS question_correct_option_id_fkey"))
-                    conn.execute(text("ALTER TABLE options DROP CONSTRAINT IF EXISTS options_question_id_fkey"))
+                    conn.execute(text("DROP TABLE IF EXISTS student_answers CASCADE"))
+                    conn.execute(text("DROP TABLE IF EXISTS question CASCADE"))
+                    conn.execute(text("DROP TABLE IF EXISTS options CASCADE"))
                     conn.commit()
-                    logger.info("✅ Dropped existing foreign key constraints")
+                    logger.info("✅ Dropped existing tables")
                 except Exception as e:
-                    logger.info(f"⚠️ No constraints to drop: {e}")
+                    logger.info(f"⚠️ No tables to drop: {e}")
                 
-                # Create tables without constraints
-                Question.__table__.create(db.engine, checkfirst=True)
-                Option.__table__.create(db.engine, checkfirst=True)
-                logger.info("✅ Created question and options tables without constraints")
+                # Create question table without foreign key constraints
+                conn.execute(text("""
+                    CREATE TABLE question (
+                        id SERIAL PRIMARY KEY,
+                        quiz_id INTEGER NOT NULL REFERENCES quiz(id),
+                        text TEXT NOT NULL,
+                        points FLOAT NOT NULL DEFAULT 1.0,
+                        question_type VARCHAR(50) NOT NULL DEFAULT 'mcq',
+                        correct_option_id INTEGER
+                    )
+                """))
+                logger.info("✅ Created question table")
                 
-                # Add back the constraints
+                # Create options table without foreign key constraints
+                conn.execute(text("""
+                    CREATE TABLE options (
+                        id SERIAL PRIMARY KEY,
+                        question_id INTEGER NOT NULL,
+                        text VARCHAR(1000) NOT NULL,
+                        is_correct BOOLEAN DEFAULT FALSE,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """))
+                logger.info("✅ Created options table")
+                
+                # Create student_answers table
+                conn.execute(text("""
+                    CREATE TABLE student_answers (
+                        id SERIAL PRIMARY KEY,
+                        attempt_id INTEGER NOT NULL REFERENCES quiz_attempt(id) ON DELETE CASCADE,
+                        question_id INTEGER NOT NULL REFERENCES question(id) ON DELETE CASCADE,
+                        quiz_id INTEGER NOT NULL REFERENCES quiz(id) ON DELETE CASCADE,
+                        student_id INTEGER NOT NULL REFERENCES "user"(id) ON DELETE CASCADE,
+                        selected_option_id INTEGER REFERENCES options(id) ON DELETE SET NULL,
+                        answer_text TEXT,
+                        is_correct BOOLEAN DEFAULT FALSE,
+                        time_spent_seconds INTEGER,
+                        answered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        CONSTRAINT uq_attempt_question UNIQUE (attempt_id, question_id)
+                    )
+                """))
+                logger.info("✅ Created student_answers table")
+                
+                # Now add the foreign key constraint for correct_option_id
                 try:
                     conn.execute(text("ALTER TABLE question ADD CONSTRAINT question_correct_option_id_fkey FOREIGN KEY (correct_option_id) REFERENCES options(id)"))
                     conn.execute(text("ALTER TABLE options ADD CONSTRAINT options_question_id_fkey FOREIGN KEY (question_id) REFERENCES question(id) ON DELETE CASCADE"))
                     conn.commit()
-                    logger.info("✅ Added foreign key constraints back")
+                    logger.info("✅ Added foreign key constraints")
                 except Exception as e:
                     logger.warning(f"⚠️ Could not add constraints: {e}")
+                    conn.commit()
                     
         except Exception as e:
-            logger.warning(f"⚠️ Manual table creation failed: {e}")
+            logger.error(f"❌ Manual table creation failed: {e}")
+            # Fallback: try to create without constraints
+            try:
+                Question.__table__.create(db.engine, checkfirst=True)
+                Option.__table__.create(db.engine, checkfirst=True)
+                StudentAnswer.__table__.create(db.engine, checkfirst=True)
+                logger.info("✅ Created tables with fallback method")
+            except Exception as fallback_e:
+                logger.error(f"❌ Fallback also failed: {fallback_e}")
         
         # Now create the remaining quiz-related tables
         remaining_quiz_models = [
-            StudentAnswer
+            # StudentAnswer is created manually above
         ]
         
         # Assignment-related tables
