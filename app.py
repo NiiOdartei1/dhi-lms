@@ -145,8 +145,44 @@ def initialize_database():
         
         # Quiz-related tables (need to be created in order)
         quiz_models = [
-            Quiz, Question, Option, QuizAttempt,
-            StudentQuizSubmission, StudentAnswer
+            Quiz, QuizAttempt, StudentQuizSubmission
+        ]
+        
+        # Handle circular dependency between question and options
+        logger.info("🔄 Handling circular dependency for question/options tables...")
+        try:
+            # Create question table without foreign key constraints first
+            from sqlalchemy import text
+            with db.engine.connect() as conn:
+                # Drop foreign key constraints if they exist
+                try:
+                    conn.execute(text("ALTER TABLE question DROP CONSTRAINT IF EXISTS question_correct_option_id_fkey"))
+                    conn.execute(text("ALTER TABLE options DROP CONSTRAINT IF EXISTS options_question_id_fkey"))
+                    conn.commit()
+                    logger.info("✅ Dropped existing foreign key constraints")
+                except Exception as e:
+                    logger.info(f"⚠️ No constraints to drop: {e}")
+                
+                # Create tables without constraints
+                Question.__table__.create(db.engine, checkfirst=True)
+                Option.__table__.create(db.engine, checkfirst=True)
+                logger.info("✅ Created question and options tables without constraints")
+                
+                # Add back the constraints
+                try:
+                    conn.execute(text("ALTER TABLE question ADD CONSTRAINT question_correct_option_id_fkey FOREIGN KEY (correct_option_id) REFERENCES options(id)"))
+                    conn.execute(text("ALTER TABLE options ADD CONSTRAINT options_question_id_fkey FOREIGN KEY (question_id) REFERENCES question(id) ON DELETE CASCADE"))
+                    conn.commit()
+                    logger.info("✅ Added foreign key constraints back")
+                except Exception as e:
+                    logger.warning(f"⚠️ Could not add constraints: {e}")
+                    
+        except Exception as e:
+            logger.warning(f"⚠️ Manual table creation failed: {e}")
+        
+        # Now create the remaining quiz-related tables
+        remaining_quiz_models = [
+            StudentAnswer
         ]
         
         # Assignment-related tables
@@ -185,7 +221,7 @@ def initialize_database():
         
         # Create tables in dependency order
         all_model_groups = [
-            core_models, quiz_models, assignment_models, 
+            core_models, quiz_models, remaining_quiz_models, assignment_models, 
             exam_models, grading_models, appointment_models,
             communication_models, teacher_assessment_models
         ]
@@ -208,7 +244,7 @@ def initialize_database():
         logger.info(f"📋 Tables: {', '.join(sorted(table_names))}")
         
         # Check for specific missing tables
-        all_models = (core_models + quiz_models + assignment_models + 
+        all_models = (core_models + quiz_models + remaining_quiz_models + assignment_models + 
                       exam_models + grading_models + appointment_models +
                       communication_models + teacher_assessment_models)
         required_tables = [model.__tablename__ for model in all_models]
