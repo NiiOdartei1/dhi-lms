@@ -193,7 +193,7 @@ def init_database_route():
         # Create SuperAdmin if missing
         try:
             if not Admin.query.filter_by(username='SuperAdmin').first():
-                admin = Admin(username='SuperAdmin', admin_id='ADM001')
+                admin = Admin(username='SuperAdmin', admin_id='ADM001', email='admin@lms.com')
                 admin.set_password('Password123')
                 Admin.apply_superadmin_preset(admin)
                 db.session.add(admin)
