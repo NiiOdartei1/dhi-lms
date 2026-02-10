@@ -128,93 +128,39 @@ def initialize_database():
             else:
                 logger.warning(f"⚠️ db.create_all() warning: {e}")
         
-        # Double-check critical tables exist by trying to create them explicitly
-        logger.info("🔍 Verifying critical tables...")
-        critical_tables = [
-            (User, "user"),
-            (Admin, "admin"),
-            (StudentProfile, "student_profile"),
-            (ProgrammeFeeStructure, "programme_fee_structure"),
-            (StudentFeeBalance, "student_fee_balance"),
-            (StudentFeeTransaction, "student_fee_transaction"),
-            (Notification, "notifications"),
-            (NotificationRecipient, "notification_recipients"),
-            (NotificationPreference, "notification_preferences"),
-            (Course, "course"),
-            (Assignment, "assignment"),
-            (Quiz, "quiz"),
-            (Exam, "exam"),
-            (StudentCourseRegistration, "student_course_registration"),
-            (CourseMaterial, "course_material"),
-            (TimetableEntry, "timetable_entry"),
-            (TeacherProfile, "teacher_profile"),
-        ]
-        
-        for model, table_name in critical_tables:
-            try:
-                model.__table__.create(db.engine, checkfirst=True)
-                logger.info(f"  ✓ {table_name}")
-            except Exception as e:
-                if "already exists" in str(e).lower() or "duplicate" in str(e).lower():
-                    logger.info(f"  ✓ {table_name} (already exists)")
-                else:
-                    logger.warning(f"  ⚠️ {table_name}: {e}")
-                    # Rollback any failed transaction
-                    db.session.rollback()
-        
-        # Check how many tables were created
-        from sqlalchemy import inspect
-        inspector = inspect(db.engine)
-        all_tables = inspector.get_table_names()
-        logger.info(f"📊 Total tables in database: {len(all_tables)}")
-        
-        # Create SuperAdmin if it doesn't exist
-        logger.info("👤 Checking for SuperAdmin account...")
-        existing_admin = Admin.query.filter_by(username='SuperAdmin').first()
-        
-        if not existing_admin:
-            logger.info("🔧 Creating SuperAdmin account...")
-            admin = Admin(
-                username='SuperAdmin',
-                admin_id='ADM001',
-                email='admin@lms.com'
-            )
+        # Create SuperAdmin if missing
+        logger.info("� Checking SuperAdmin account...")
+        if not Admin.query.filter_by(username='SuperAdmin').first():
+            admin = Admin(username='SuperAdmin', admin_id='ADM001')
             admin.set_password('Password123')
             Admin.apply_superadmin_preset(admin)
+            
             db.session.add(admin)
             db.session.commit()
             logger.info("✅ SuperAdmin created successfully")
-            logger.info("   Username: SuperAdmin")
-            logger.info("   Password: Password123")
-            logger.info("   Admin ID: ADM001")
         else:
             logger.info("✅ SuperAdmin already exists")
         
-        logger.info("=" * 60)
-        logger.info("✅ DATABASE INITIALIZATION COMPLETE")
-        logger.info("=" * 60)
+        logger.info("=" * 70)
+        logger.info("✅✅✅ DATABASE INITIALIZATION COMPLETE - ALL TABLES READY ✅✅✅")
+        logger.info("=" * 70)
         
-        return True, "Database initialized successfully"
+        return True
         
     except Exception as e:
-        error_msg = f"Database initialization error: {str(e)}"
-        logger.error("=" * 60)
-        logger.error("❌ DATABASE INITIALIZATION FAILED")
-        logger.error(error_msg)
-        logger.error("=" * 60)
-        import traceback
-        logger.error(traceback.format_exc())
-        return False, error_msg
+        logger.error(f"❌ Database initialization failed: {e}")
+        db.session.rollback()
+        return False
 
 # ===== Auto-Initialize Database on Startup (Production Only) =====
 if IS_PRODUCTION:
     logger.info("🚀 Production environment detected - auto-initializing database...")
     with app.app_context():
-        success, message = initialize_database()
+        success = initialize_database()
         if success:
             logger.info("🎉 Auto-initialization successful!")
         else:
-            logger.error(f"⚠️ Auto-initialization failed: {message}")
+            logger.error("⚠️ Auto-initialization failed")
             logger.error("💡 You can manually initialize by visiting /init-db")
 else:
     logger.info("🏠 Local development environment - skipping auto-initialization")
