@@ -134,6 +134,7 @@ def initialize_database():
             (User, "user"),
             (Admin, "admin"),
             (StudentProfile, "student_profile"),
+            (ProgrammeFeeStructure, "programme_fee_structure"),
             (StudentFeeBalance, "student_fee_balance"),
             (StudentFeeTransaction, "student_fee_transaction"),
             (Notification, "notifications"),
@@ -158,6 +159,8 @@ def initialize_database():
                     logger.info(f"  ✓ {table_name} (already exists)")
                 else:
                     logger.warning(f"  ⚠️ {table_name}: {e}")
+                    # Rollback any failed transaction
+                    db.session.rollback()
         
         # Check how many tables were created
         from sqlalchemy import inspect
