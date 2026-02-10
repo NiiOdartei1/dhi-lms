@@ -130,37 +130,76 @@ def initialize_database():
         
         # Explicitly create critical tables that might be missing
         logger.info("🔍 Explicitly creating critical tables...")
-        critical_models = [
+        
+        # Order tables by dependencies to avoid foreign key errors
+        core_models = [
             User, Admin, StudentProfile, TeacherProfile,
             PasswordResetRequest, PasswordResetToken,
             ProgrammeFeeStructure, StudentFeeBalance, StudentFeeTransaction,
             Notification, NotificationRecipient, NotificationPreference,
             Course, CourseLimit, StudentCourseRegistration, TimetableEntry,
             CourseMaterial, CourseAssessmentScheme,
-            Assignment, AssignmentSubmission, Quiz, StudentQuizSubmission,
-            Question, Option, StudentAnswer, QuizAttempt,
-            Exam, ExamQuestion, ExamOption, ExamSet, ExamSetQuestion,
-            ExamAttempt, ExamSubmission, ExamAnswer, ExamTimetableEntry,
-            GradingScale, StudentCourseGrade, SemesterResultRelease,
             AcademicCalendar, AcademicYear, SchoolSettings,
-            AppointmentSlot, AppointmentBooking,
-            Meeting, Recording, Conversation, ConversationParticipant,
-            Message, MessageReaction,
-            TeacherCourseAssignment, TeacherAssessment,
-            TeacherAssessmentAnswer, TeacherAssessmentPeriod,
-            TeacherAssessmentQuestion,
             ProgrammeCohort, StudentPromotion
         ]
         
-        for model in critical_models:
-            try:
-                model.__table__.create(db.engine, checkfirst=True)
-                logger.info(f"✅ Created table: {model.__tablename__}")
-            except Exception as e:
-                if "already exists" in str(e).lower():
-                    logger.info(f"✅ Table already exists: {model.__tablename__}")
-                else:
-                    logger.warning(f"⚠️ Could not create table {model.__tablename__}: {e}")
+        # Quiz-related tables (need to be created in order)
+        quiz_models = [
+            Quiz, Question, Option, QuizAttempt,
+            StudentQuizSubmission, StudentAnswer
+        ]
+        
+        # Assignment-related tables
+        assignment_models = [
+            Assignment, AssignmentSubmission
+        ]
+        
+        # Exam-related tables
+        exam_models = [
+            Exam, ExamQuestion, ExamOption, ExamSet, ExamSetQuestion,
+            ExamAttempt, ExamSubmission, ExamAnswer, ExamTimetableEntry
+        ]
+        
+        # Grading tables
+        grading_models = [
+            GradingScale, StudentCourseGrade, SemesterResultRelease
+        ]
+        
+        # Appointment tables
+        appointment_models = [
+            AppointmentSlot, AppointmentBooking
+        ]
+        
+        # Communication tables
+        communication_models = [
+            Meeting, Recording, Conversation, ConversationParticipant,
+            Message, MessageReaction
+        ]
+        
+        # Teacher assessment tables
+        teacher_assessment_models = [
+            TeacherCourseAssignment, TeacherAssessmentPeriod,
+            TeacherAssessmentQuestion, TeacherAssessment,
+            TeacherAssessmentAnswer
+        ]
+        
+        # Create tables in dependency order
+        all_model_groups = [
+            core_models, quiz_models, assignment_models, 
+            exam_models, grading_models, appointment_models,
+            communication_models, teacher_assessment_models
+        ]
+        
+        for model_group in all_model_groups:
+            for model in model_group:
+                try:
+                    model.__table__.create(db.engine, checkfirst=True)
+                    logger.info(f"✅ Created table: {model.__tablename__}")
+                except Exception as e:
+                    if "already exists" in str(e).lower():
+                        logger.info(f"✅ Table already exists: {model.__tablename__}")
+                    else:
+                        logger.warning(f"⚠️ Could not create table {model.__tablename__}: {e}")
         
         logger.info("🔍 Verifying table creation...")
         inspector = db.inspect(db.engine)
@@ -169,7 +208,10 @@ def initialize_database():
         logger.info(f"📋 Tables: {', '.join(sorted(table_names))}")
         
         # Check for specific missing tables
-        required_tables = [model.__tablename__ for model in critical_models]
+        all_models = (core_models + quiz_models + assignment_models + 
+                      exam_models + grading_models + appointment_models +
+                      communication_models + teacher_assessment_models)
+        required_tables = [model.__tablename__ for model in all_models]
         missing_tables = set(required_tables) - set(table_names)
         if missing_tables:
             logger.error(f"❌ Missing tables: {', '.join(missing_tables)}")
