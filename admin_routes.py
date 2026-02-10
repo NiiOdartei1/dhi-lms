@@ -3132,8 +3132,13 @@ def result_template_settings():
 def view_database():
     data = {}
     for name, model in MODELS.items():
-        records = model.query.all()
-        data[name] = [serialize(row) for row in records]  # <-- generic serializer
+        try:
+            records = model.query.all()
+            data[name] = [serialize(row) for row in records]  # <-- generic serializer
+        except Exception as e:
+            # Skip models whose tables don't exist
+            logger.warning(f"Skipping {name} table: {e}")
+            data[name] = []
     return render_template('admin/database.html', data=data)
 
 # Update a record (POST JSON with fields to update)
