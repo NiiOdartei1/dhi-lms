@@ -94,8 +94,22 @@ login_manager.login_view = 'admin.admin_login'
 
 @login_manager.user_loader
 def load_user(user_id):
+    """
+    Load user by ID for Flask-Login
+    Handles both Admin and User types with proper ID format:
+    - Admin: "admin:public_id" 
+    - User: numeric ID
+    """
     try:
-        return User.query.get(int(user_id))
+        if user_id.startswith('admin:'):
+            # Extract public_id from "admin:public_id" format
+            public_id = user_id.split(':', 1)[1]
+            from models import Admin
+            return Admin.query.filter_by(public_id=public_id).first()
+        else:
+            # Regular User (numeric ID)
+            from models import User
+            return User.query.get(int(user_id))
     except:
         return None
 
