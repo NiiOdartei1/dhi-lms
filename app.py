@@ -42,7 +42,6 @@ app.config.from_object(Config)
 
 # Initialize extensions with app
 db.init_app(app)
-migrate = Migrate(app, db)
 mail.init_app(app)
 socketio.init_app(app, cors_allowed_origins="*", async_mode='threading')
 
