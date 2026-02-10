@@ -164,21 +164,41 @@ def init_database_route():
         # Import all models
         from models import User, Admin, StudentProfile, StudentFeeTransaction, StudentFeeBalance
         
-        # Create all tables
-        db.create_all()
-        logger.info("✓ Database tables created/verified")
+        # Create all tables with error handling for existing tables
+        try:
+            db.create_all()
+            logger.info("✓ Database tables created/verified")
+        except Exception as e:
+            if "already exists" in str(e):
+                logger.info("✓ Some database tables already exist")
+            else:
+                raise e
         
         # Create SuperAdmin if missing
-        if not Admin.query.filter_by(username='SuperAdmin').first():
-            admin = Admin(username='SuperAdmin', admin_id='ADM001')
-            admin.set_password('Password123')
-            Admin.apply_superadmin_preset(admin)
-            db.session.add(admin)
-            db.session.commit()
-            logger.info("✓ SuperAdmin created")
-            return jsonify(status='success', message='Database initialized and SuperAdmin created')
-        else:
-            return jsonify(status='success', message='Database already initialized')
+        try:
+            if not Admin.query.filter_by(username='SuperAdmin').first():
+                admin = Admin(username='SuperAdmin', admin_id='ADM001')
+                admin.set_password('Password123')
+                Admin.apply_superadmin_preset(admin)
+                db.session.add(admin)
+                db.session.commit()
+                logger.info("✓ SuperAdmin created")
+                return jsonify(status='success', message='Database initialized and SuperAdmin created')
+            else:
+                return jsonify(status='success', message='Database already initialized and SuperAdmin exists')
+        except Exception as e:
+            if "does not exist" in str(e):
+                # Admin table doesn't exist, create it specifically
+                Admin.__table__.create(db.engine, checkfirst=True)
+                admin = Admin(username='SuperAdmin', admin_id='ADM001')
+                admin.set_password('Password123')
+                Admin.apply_superadmin_preset(admin)
+                db.session.add(admin)
+                db.session.commit()
+                logger.info("✓ Admin table created and SuperAdmin created")
+                return jsonify(status='success', message='Admin table created and SuperAdmin created')
+            else:
+                raise e
             
     except Exception as e:
         logger.error(f"Database init error: {e}")
