@@ -50,6 +50,7 @@ socketio.init_app(app, cors_allowed_origins="*", async_mode='threading')
 if os.environ.get('FLASK_ENV') == 'production':
     with app.app_context():
         try:
+            # Create all tables (handle existing tables gracefully)
             db.create_all()
             logger.info("✓ Database tables created/verified on Render")
             
@@ -61,8 +62,13 @@ if os.environ.get('FLASK_ENV') == 'production':
                 db.session.add(admin)
                 db.session.commit()
                 logger.info("✓ SuperAdmin created on Render")
+            else:
+                logger.info("✓ SuperAdmin already exists on Render")
         except Exception as e:
-            logger.error(f"Database init error: {e}")
+            if "already exists" in str(e):
+                logger.info("✓ Database tables already exist on Render")
+            else:
+                logger.error(f"Database init error: {e}")
 
 IS_PRODUCTION = bool(
     app.config.get("IS_PRODUCTION")
@@ -300,36 +306,6 @@ def health():
         return jsonify(status='ok', service='lms', now=datetime.utcnow().isoformat()), 200
     except Exception:
         return jsonify(status='error'), 500
-
-@app.route('/init-db')
-def init_database_route():
-    """Manual database initialization for Render deployment"""
-    if os.environ.get('FLASK_ENV') != 'production':
-        return jsonify(error='This route is only available in production'), 403
-    
-    try:
-        # Import all models
-        from models import User, Admin, StudentProfile, StudentFeeTransaction, StudentFeeBalance
-        
-        # Create all tables
-        db.create_all()
-        logger.info("✓ Database tables created/verified")
-        
-        # Create SuperAdmin if missing
-        if not Admin.query.filter_by(username='SuperAdmin').first():
-            admin = Admin(username='SuperAdmin', admin_id='ADM001')
-            admin.set_password('Password123')
-            Admin.apply_superadmin_preset(admin)
-            db.session.add(admin)
-            db.session.commit()
-            logger.info("✓ SuperAdmin created")
-            return jsonify(status='success', message='Database initialized and SuperAdmin created')
-        else:
-            return jsonify(status='success', message='Database already initialized')
-            
-    except Exception as e:
-        logger.error(f"Database init error: {e}")
-        return jsonify(status='error', message=str(e)), 500
 
 # ===== Run =====
 if __name__ == "__main__":
