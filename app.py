@@ -193,22 +193,22 @@ def initialize_database():
         logger.info("✅✅✅ DATABASE INITIALIZATION COMPLETE - ALL TABLES READY ✅✅✅")
         logger.info("=" * 70)
         
-        return True
+        return True, "Database initialization completed successfully"
         
     except Exception as e:
         logger.error(f"❌ Database initialization failed: {e}")
         db.session.rollback()
-        return False
+        return False, f"Database initialization failed: {str(e)}"
 
 # ===== Auto-Initialize Database on Startup (Production Only) =====
 if IS_PRODUCTION:
     logger.info("🚀 Production environment detected - auto-initializing database...")
     with app.app_context():
-        success = initialize_database()
+        success, message = initialize_database()
         if success:
             logger.info("🎉 Auto-initialization successful!")
         else:
-            logger.error("⚠️ Auto-initialization failed")
+            logger.error(f"⚠️ Auto-initialization failed: {message}")
             logger.error("💡 You can manually initialize by visiting /init-db")
 else:
     logger.info("🏠 Local development environment - skipping auto-initialization")
