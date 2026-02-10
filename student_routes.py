@@ -1221,13 +1221,9 @@ def download_timetable():
 
 
     timetable_entries = TimetableEntry.query \
-
         .filter_by(assigned_class=programme_level) \
-
         .join(Course, TimetableEntry.course_id == Course.id) \
-
         .order_by(TimetableEntry.day_of_week, TimetableEntry.start_time) \
-
         .all()
 
 
