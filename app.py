@@ -175,7 +175,7 @@ app.register_blueprint(vclass_bp, url_prefix='/vclass')
 app.register_blueprint(chat_bp, url_prefix='/chat')
 app.register_blueprint(finance_bp, url_prefix='/finance')
 app.register_blueprint(results_bp, url_prefix='/student-results')
-app.register_blueprint(create_student_transcript_blueprint(), url_prefix='/transcript')
+app.register_blueprint(create_student_transcript_blueprint())
 app.register_blueprint(admissions_bp, url_prefix='/admissions')
 
 logger.info("✓ All blueprints registered")
