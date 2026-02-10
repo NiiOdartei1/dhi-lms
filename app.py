@@ -54,6 +54,13 @@ if os.environ.get('FLASK_ENV') == 'production':
             db.create_all()
             logger.info("✓ Database tables created/verified on Render")
             
+            # Ensure notification tables exist specifically
+            from models import Notification, NotificationRecipient, NotificationPreference
+            Notification.__table__.create(db.engine, checkfirst=True)
+            NotificationRecipient.__table__.create(db.engine, checkfirst=True)
+            NotificationPreference.__table__.create(db.engine, checkfirst=True)
+            logger.info("✓ Notification tables verified on Render")
+            
             # Create SuperAdmin if missing
             if not Admin.query.filter_by(username='SuperAdmin').first():
                 admin = Admin(username='SuperAdmin', admin_id='ADM001')
@@ -188,7 +195,7 @@ def init_database_route():
             Admin.__table__.create(db.engine, checkfirst=True)
             logger.info("✓ Admin table created/verified")
             
-            # Create other tables
+            # Create other core tables
             StudentProfile.__table__.create(db.engine, checkfirst=True)
             logger.info("✓ StudentProfile table created/verified")
             
@@ -197,6 +204,17 @@ def init_database_route():
             
             StudentFeeBalance.__table__.create(db.engine, checkfirst=True)
             logger.info("✓ StudentFeeBalance table created/verified")
+            
+            # Create notification tables
+            from models import Notification, NotificationRecipient, NotificationPreference
+            Notification.__table__.create(db.engine, checkfirst=True)
+            logger.info("✓ Notification table created/verified")
+            
+            NotificationRecipient.__table__.create(db.engine, checkfirst=True)
+            logger.info("✓ NotificationRecipient table created/verified")
+            
+            NotificationPreference.__table__.create(db.engine, checkfirst=True)
+            logger.info("✓ NotificationPreference table created/verified")
             
         except Exception as e:
             if "already exists" in str(e):
