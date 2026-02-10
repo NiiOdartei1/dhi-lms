@@ -122,8 +122,8 @@
   </nav>
 
   <!-- Notification Badge Update Script -->
+  {% if current_user.is_authenticated %}
   <script>
-    {% if current_user.is_authenticated %}
     // Update notification count every 30 seconds
     function updateNotificationCount() {
         fetch('/notifications/api/count')
@@ -139,20 +139,22 @@
                     }
                 }
             })
-            .catch(err => console.error('Notification update failed:', err));
+            .catch(error => console.error('Error updating notifications:', error));
     }
     
     // Check on page load
     if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', updateNotificationCount);
+        document.addEventListener('DOMContentLoaded', function() {
+            updateNotificationCount();
+        });
     } else {
         updateNotificationCount();
     }
     
     // Check every 30 seconds
     setInterval(updateNotificationCount, 30000);
-    {% endif %}
   </script>
+  {% endif %}
 
   <!-- Main Content -->
   <div class="container mt-1">
