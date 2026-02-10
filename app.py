@@ -175,6 +175,70 @@ def health():
     except Exception:
         return jsonify(status='error'), 500
 
+@app.route('/init-all-tables')
+def init_all_tables():
+    """Force create ALL tables at once"""
+    if os.environ.get('FLASK_ENV') != 'production':
+        return jsonify(error='This route is only available in production'), 403
+    
+    try:
+        # Import ALL models to ensure they're registered
+        from models import (
+            User, Admin, StudentProfile, StudentFeeTransaction, StudentFeeBalance,
+            Notification, NotificationRecipient, NotificationPreference,
+            Course, StudentCourseRegistration, Assignment, AssignmentSubmission,
+            Quiz, StudentQuizSubmission, Question, Exam, ExamSubmission,
+            ExamQuestion, ExamAttempt, ExamSet, ExamSetQuestion,
+            CourseMaterial, TimetableEntry, AcademicCalendar, AcademicYear,
+            TeacherProfile, TeacherCourseAssignment, TeacherAssessment,
+            TeacherAssessmentAnswer, TeacherAssessmentPeriod, TeacherAssessmentQuestion,
+            AppointmentSlot, AppointmentBooking, Meeting, StudentAnswer,
+            ProgrammeFeeStructure, ExamTimetableEntry
+        )
+        
+        # Create ALL tables using db.create_all() first
+        db.create_all()
+        logger.info("✓ All tables created via db.create_all()")
+        
+        # Then force create specific tables that might be missing
+        tables_to_create = [
+            User, Admin, StudentProfile, StudentFeeTransaction, StudentFeeBalance,
+            Notification, NotificationRecipient, NotificationPreference,
+            Course, StudentCourseRegistration, Assignment, AssignmentSubmission,
+            Quiz, StudentQuizSubmission, Question, Exam, ExamSubmission,
+            ExamQuestion, ExamAttempt, ExamSet, ExamSetQuestion,
+            CourseMaterial, TimetableEntry, AcademicCalendar, AcademicYear,
+            TeacherProfile, TeacherCourseAssignment, TeacherAssessment,
+            TeacherAssessmentAnswer, TeacherAssessmentPeriod, TeacherAssessmentQuestion,
+            AppointmentSlot, AppointmentBooking, Meeting, StudentAnswer,
+            ProgrammeFeeStructure, ExamTimetableEntry
+        ]
+        
+        created_tables = []
+        for table in tables_to_create:
+            try:
+                table.__table__.create(db.engine, checkfirst=True)
+                created_tables.append(table.__tablename__)
+                logger.info(f"✓ {table.__tablename__} table created/verified")
+            except Exception as e:
+                logger.warning(f"⚠️ {table.__tablename__}: {e}")
+        
+        logger.info("✓ All tables initialization complete")
+        
+        return jsonify({
+            'status': 'success',
+            'message': 'All tables created successfully',
+            'tables_created': created_tables,
+            'total_tables': len(created_tables)
+        })
+        
+    except Exception as e:
+        logger.error(f"All tables creation error: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
 @app.route('/init-notification-tables')
 def init_notification_tables():
     """Force create notification tables"""
