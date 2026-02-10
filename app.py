@@ -21,16 +21,16 @@ from werkzeug.utils import secure_filename
 from dotenv import load_dotenv
 load_dotenv()
 
-# ===== Flask App =====
-app = Flask(__name__)
-app.config.from_object(Config)
-
 # ===== Extensions & Config =====
 from flask_login import LoginManager, login_required, logout_user, current_user
 from flask_migrate import Migrate
 from flask_wtf.csrf import CSRFProtect, CSRFError, generate_csrf
 from utils.extensions import db, mail, socketio
 from config import Config
+
+# ===== Flask App =====
+app = Flask(__name__)
+app.config.from_object(Config)
 
 # Initialize extensions ONCE
 db.init_app(app)
