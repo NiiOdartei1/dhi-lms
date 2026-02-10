@@ -9,7 +9,7 @@ if sys.platform == "win32":
         os.environ["PATH"] = gtk_path + ";" + os.environ["PATH"]
 # ================================================
 
-# app.py - My LMS — Clean Production Version
+# app.py - My LMS — Clean Production Version with Robust Database Initialization
 
 import os
 import logging
@@ -39,60 +39,178 @@ mail.init_app(app)
 socketio.init_app(app, cors_allowed_origins="*", async_mode='threading')
 csrf = CSRFProtect(app)
 
-# Import all models to ensure they're registered
-from models import Admin, StudentProfile, User
-
 # ===== Logging =====
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Auto-initialize database for Render (runs on every startup in production)
-if os.environ.get('FLASK_ENV') == 'production':
-    with app.app_context():
-        try:
-            # Create all tables (handle existing tables gracefully)
-            db.create_all()
-            logger.info("✓ Database tables created/verified on Render")
-            
-            # Ensure notification tables exist specifically
-            from models import Notification, NotificationRecipient, NotificationPreference
-            Notification.__table__.create(db.engine, checkfirst=True)
-            NotificationRecipient.__table__.create(db.engine, checkfirst=True)
-            NotificationPreference.__table__.create(db.engine, checkfirst=True)
-            logger.info("✓ Notification tables verified on Render")
-            
-            # Create SuperAdmin if missing
-            if not Admin.query.filter_by(username='SuperAdmin').first():
-                admin = Admin(username='SuperAdmin', admin_id='ADM001')
-                admin.set_password('Password123')
-                Admin.apply_superadmin_preset(admin)
-                db.session.add(admin)
-                db.session.commit()
-                logger.info("✓ SuperAdmin created on Render")
-            else:
-                logger.info("✓ SuperAdmin already exists on Render")
-        except Exception as e:
-            if "already exists" in str(e):
-                logger.info("✓ Database tables already exist on Render")
-            else:
-                logger.error(f"Database init error: {e}")
-
 # ===== Configuration =====
+# Check if we're in production (Render deployment)
 IS_PRODUCTION = bool(
     app.config.get("IS_PRODUCTION")
     or os.environ.get("IS_PRODUCTION") in ("1", "true", "True")
-    or app.config.get("ENV", "").lower() == "production"
+    or os.environ.get("FLASK_ENV", "").lower() == "production"
+    or os.environ.get("RENDER") == "true"  # Render sets this automatically
+    or "render.com" in os.environ.get("RENDER_EXTERNAL_URL", "")
 )
 
-# Ensure eventlet is imported only if installed. Fallback to threading if not.
+logger.info(f"🌍 Environment: {'PRODUCTION (Render)' if IS_PRODUCTION else 'LOCAL DEVELOPMENT'}")
+
+# ===== Helper Function to Initialize Database =====
+def initialize_database():
+    """
+    Initialize database tables and create SuperAdmin
+    This function can be called from multiple places:
+    1. Automatic initialization on app startup (production)
+    2. Manual initialization via /init-db route
+    3. Force initialization via /init-all-tables route
+    """
+    try:
+        logger.info("=" * 60)
+        logger.info("🔧 DATABASE INITIALIZATION STARTING...")
+        logger.info("=" * 60)
+        
+        # Import ALL models to ensure they're registered with SQLAlchemy
+        logger.info("📦 Importing all models...")
+        from models import (
+            # Core user models
+            User, Admin, StudentProfile, TeacherProfile,
+            
+            # Fee and finance models
+            StudentFeeTransaction, StudentFeeBalance, ProgrammeFeeStructure,
+            
+            # Notification models
+            Notification, NotificationRecipient, NotificationPreference,
+            
+            # Course and academic models
+            Course, CourseLimit, StudentCourseRegistration, TimetableEntry,
+            CourseMaterial, CourseAssessmentScheme,
+            
+            # Assignment and quiz models
+            Assignment, AssignmentSubmission, Quiz, StudentQuizSubmission,
+            Question, Option, StudentAnswer, QuizAttempt,
+            
+            # Exam models
+            Exam, ExamQuestion, ExamOption, ExamSet, ExamSetQuestion,
+            ExamAttempt, ExamSubmission, ExamAnswer, ExamTimetableEntry,
+            
+            # Grading models
+            GradingScale, StudentCourseGrade, SemesterResultRelease,
+            
+            # Calendar and schedule models
+            AcademicCalendar, AcademicYear, SchoolSettings,
+            
+            # Appointment models
+            AppointmentSlot, AppointmentBooking,
+            
+            # Meeting and communication models
+            Meeting, Recording, Conversation, ConversationParticipant,
+            Message, MessageReaction,
+            
+            # Assessment models
+            TeacherCourseAssignment, TeacherAssessment,
+            TeacherAssessmentAnswer, TeacherAssessmentPeriod,
+            TeacherAssessmentQuestion,
+            
+            # Other models
+            ProgrammeCohort, StudentPromotion,
+            PasswordResetRequest, PasswordResetToken
+        )
+        logger.info("✅ All models imported successfully")
+        
+        # Create all tables using db.create_all() - this is the safest method
+        logger.info("🔨 Creating all database tables...")
+        db.create_all()
+        logger.info("✅ db.create_all() completed successfully")
+        
+        # Double-check critical tables exist by trying to create them explicitly
+        logger.info("🔍 Verifying critical tables...")
+        critical_tables = [
+            (User, "user"),
+            (Admin, "admin"),
+            (StudentProfile, "student_profile"),
+            (Notification, "notifications"),
+            (NotificationRecipient, "notification_recipients"),
+            (NotificationPreference, "notification_preferences"),
+        ]
+        
+        for model, table_name in critical_tables:
+            try:
+                model.__table__.create(db.engine, checkfirst=True)
+                logger.info(f"  ✓ {table_name}")
+            except Exception as e:
+                if "already exists" in str(e).lower():
+                    logger.info(f"  ✓ {table_name} (already exists)")
+                else:
+                    logger.warning(f"  ⚠️ {table_name}: {e}")
+        
+        # Check how many tables were created
+        from sqlalchemy import inspect
+        inspector = inspect(db.engine)
+        all_tables = inspector.get_table_names()
+        logger.info(f"📊 Total tables in database: {len(all_tables)}")
+        
+        # Create SuperAdmin if it doesn't exist
+        logger.info("👤 Checking for SuperAdmin account...")
+        existing_admin = Admin.query.filter_by(username='SuperAdmin').first()
+        
+        if not existing_admin:
+            logger.info("🔧 Creating SuperAdmin account...")
+            admin = Admin(
+                username='SuperAdmin',
+                admin_id='ADM001',
+                email='admin@lms.com'
+            )
+            admin.set_password('Password123')
+            Admin.apply_superadmin_preset(admin)
+            db.session.add(admin)
+            db.session.commit()
+            logger.info("✅ SuperAdmin created successfully")
+            logger.info("   Username: SuperAdmin")
+            logger.info("   Password: Password123")
+            logger.info("   Admin ID: ADM001")
+        else:
+            logger.info("✅ SuperAdmin already exists")
+        
+        logger.info("=" * 60)
+        logger.info("✅ DATABASE INITIALIZATION COMPLETE")
+        logger.info("=" * 60)
+        
+        return True, "Database initialized successfully"
+        
+    except Exception as e:
+        error_msg = f"Database initialization error: {str(e)}"
+        logger.error("=" * 60)
+        logger.error("❌ DATABASE INITIALIZATION FAILED")
+        logger.error(error_msg)
+        logger.error("=" * 60)
+        import traceback
+        logger.error(traceback.format_exc())
+        return False, error_msg
+
+# ===== Auto-Initialize Database on Startup (Production Only) =====
+if IS_PRODUCTION:
+    logger.info("🚀 Production environment detected - auto-initializing database...")
+    with app.app_context():
+        success, message = initialize_database()
+        if success:
+            logger.info("🎉 Auto-initialization successful!")
+        else:
+            logger.error(f"⚠️ Auto-initialization failed: {message}")
+            logger.error("💡 You can manually initialize by visiting /init-db")
+else:
+    logger.info("🏠 Local development environment - skipping auto-initialization")
+    logger.info("💡 Use /init-db route to initialize database manually")
+
+# ===== Eventlet Configuration =====
 try:
-    import eventlet  # pip install eventlet
-    # Only monkey-patch if we intend to use eventlet (avoid unnecessary patching)
+    import eventlet
     if IS_PRODUCTION:
         eventlet.monkey_patch()
     SOCKETIO_ASYNC_MODE = "eventlet"
 except ImportError:
     SOCKETIO_ASYNC_MODE = "threading"
+
+logger.info(f"🔌 SocketIO mode: {SOCKETIO_ASYNC_MODE}")
 
 # ===== Login Manager =====
 login_manager = LoginManager()
@@ -105,7 +223,7 @@ def load_user(user_id):
     Load user by ID for Flask-Login
     Handles both Admin and User types with proper ID format:
     - Admin: "admin:public_id" 
-    - User: numeric ID
+    - User: "user:public_id" or numeric ID (legacy)
     """
     try:
         if user_id.startswith('admin:'):
@@ -113,11 +231,17 @@ def load_user(user_id):
             public_id = user_id.split(':', 1)[1]
             from models import Admin
             return Admin.query.filter_by(public_id=public_id).first()
+        elif user_id.startswith('user:'):
+            # Extract public_id from "user:public_id" format
+            public_id = user_id.split(':', 1)[1]
+            from models import User
+            return User.query.filter_by(public_id=public_id).first()
         else:
-            # Regular User (numeric ID)
+            # Legacy numeric ID support
             from models import User
             return User.query.get(int(user_id))
-    except:
+    except Exception as e:
+        logger.error(f"Error loading user {user_id}: {e}")
         return None
 
 # ===== CSRF Protection =====
@@ -134,28 +258,39 @@ def handle_csrf_error(e):
 
 # ===== Template Filters =====
 def _start_year_filter(value):
-    """Extract start year from academic year string"""
+    """Extract start year from academic year string (e.g., '2024/2025' -> '2024')"""
     if isinstance(value, str) and '/' in value:
         return value.split('/')[0]
     return value
 
 app.jinja_env.filters['start_year'] = _start_year_filter
 
-# ===== Routes =====
+# ===== Basic Routes =====
 @app.route('/')
 def home():
+    """Home page route with enhanced error handling"""
     try:
         return render_template('home.html')
     except Exception as e:
         logger.exception("Template error on /: %s", e)
-        return f"<h1>Template rendering error: {e}</h1>", 500
+        return f"""
+        <h1>⚠️ Template Rendering Error</h1>
+        <p>Error: {str(e)}</p>
+        <p>If you just deployed, try initializing the database:</p>
+        <ul>
+            <li><a href="/init-db">Initialize Database</a></li>
+            <li><a href="/health">Check Health</a></li>
+        </ul>
+        """, 500
 
 @app.route('/portal')
 def select_portal():
+    """Portal selection page"""
     return render_template('portal_selection.html')
 
 @app.route('/portal/<portal>')
 def redirect_to_portal(portal):
+    """Redirect to specific portal"""
     mapping = {
         'exams': 'exam.exam_login',
         'teachers': 'teacher.teacher_login',
@@ -169,98 +304,113 @@ def redirect_to_portal(portal):
 
 @app.route('/health')
 def health():
-    """Lightweight health check for load balancers and Render."""
+    """
+    Lightweight health check for load balancers and Render
+    Also checks database connectivity
+    """
     try:
-        return jsonify(status='ok', service='lms', now=datetime.utcnow().isoformat()), 200
-    except Exception:
-        return jsonify(status='error'), 500
+        # Check database connection
+        db_status = "connected"
+        table_count = 0
+        try:
+            from sqlalchemy import inspect
+            inspector = inspect(db.engine)
+            table_count = len(inspector.get_table_names())
+        except Exception as e:
+            db_status = f"error: {str(e)}"
+        
+        return jsonify({
+            'status': 'ok',
+            'service': 'lms',
+            'environment': 'production' if IS_PRODUCTION else 'development',
+            'database': db_status,
+            'tables': table_count,
+            'timestamp': datetime.utcnow().isoformat()
+        }), 200
+    except Exception as e:
+        logger.error(f"Health check failed: {e}")
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
+
+# ===== Database Initialization Routes =====
+
+@app.route('/init-db')
+def init_database_route():
+    """
+    Manual database initialization route
+    Works in both development and production
+    Safe to call multiple times (won't duplicate data)
+    """
+    try:
+        with app.app_context():
+            success, message = initialize_database()
+            
+            if success:
+                return jsonify({
+                    'status': 'success',
+                    'message': message,
+                    'next_steps': [
+                        'Visit the home page: /',
+                        'Login as SuperAdmin (username: SuperAdmin, password: Password123)',
+                        'Change the default password immediately'
+                    ]
+                }), 200
+            else:
+                return jsonify({
+                    'status': 'error',
+                    'message': message
+                }), 500
+                
+    except Exception as e:
+        logger.error(f"Init-db route error: {e}")
+        import traceback
+        return jsonify({
+            'status': 'error',
+            'message': str(e),
+            'traceback': traceback.format_exc()
+        }), 500
 
 @app.route('/init-all-tables')
 def init_all_tables():
-    """Force create ALL tables at once"""
-    if os.environ.get('FLASK_ENV') != 'production':
-        return jsonify(error='This route is only available in production'), 403
-    
-    try:
-        # Import ALL models to ensure they're registered
-        from models import (
-            User, Admin, StudentProfile, StudentFeeTransaction, StudentFeeBalance,
-            Notification, NotificationRecipient, NotificationPreference,
-            Course, StudentCourseRegistration, Assignment, AssignmentSubmission,
-            Quiz, StudentQuizSubmission, Question, Exam, ExamSubmission,
-            ExamQuestion, ExamAttempt, ExamSet, ExamSetQuestion,
-            CourseMaterial, TimetableEntry, AcademicCalendar, AcademicYear,
-            TeacherProfile, TeacherCourseAssignment, TeacherAssessment,
-            TeacherAssessmentAnswer, TeacherAssessmentPeriod, TeacherAssessmentQuestion,
-            AppointmentSlot, AppointmentBooking, Meeting, StudentAnswer,
-            ProgrammeFeeStructure, ExamTimetableEntry
-        )
-        
-        # Create ALL tables using db.create_all() first
-        db.create_all()
-        logger.info("✓ All tables created via db.create_all()")
-        
-        # Then force create specific tables that might be missing
-        tables_to_create = [
-            User, Admin, StudentProfile, StudentFeeTransaction, StudentFeeBalance,
-            Notification, NotificationRecipient, NotificationPreference,
-            Course, StudentCourseRegistration, Assignment, AssignmentSubmission,
-            Quiz, StudentQuizSubmission, Question, Exam, ExamSubmission,
-            ExamQuestion, ExamAttempt, ExamSet, ExamSetQuestion,
-            CourseMaterial, TimetableEntry, AcademicCalendar, AcademicYear,
-            TeacherProfile, TeacherCourseAssignment, TeacherAssessment,
-            TeacherAssessmentAnswer, TeacherAssessmentPeriod, TeacherAssessmentQuestion,
-            AppointmentSlot, AppointmentBooking, Meeting, StudentAnswer,
-            ProgrammeFeeStructure, ExamTimetableEntry
-        ]
-        
-        created_tables = []
-        for table in tables_to_create:
-            try:
-                table.__table__.create(db.engine, checkfirst=True)
-                created_tables.append(table.__tablename__)
-                logger.info(f"✓ {table.__tablename__} table created/verified")
-            except Exception as e:
-                logger.warning(f"⚠️ {table.__tablename__}: {e}")
-        
-        logger.info("✓ All tables initialization complete")
-        
-        return jsonify({
-            'status': 'success',
-            'message': 'All tables created successfully',
-            'tables_created': created_tables,
-            'total_tables': len(created_tables)
-        })
-        
-    except Exception as e:
-        logger.error(f"All tables creation error: {e}")
-        return jsonify({
-            'status': 'error',
-            'message': str(e)
-        }), 500
+    """
+    Force create ALL tables (alias for init-db for backward compatibility)
+    """
+    return init_database_route()
 
 @app.route('/init-notification-tables')
 def init_notification_tables():
-    """Force create notification tables"""
-    if os.environ.get('FLASK_ENV') != 'production':
-        return jsonify(error='This route is only available in production'), 403
-    
+    """
+    Specifically initialize notification tables
+    Useful if only notification tables are missing
+    """
     try:
-        from models import Notification, NotificationRecipient, NotificationPreference
-        
-        # Force create notification tables
-        Notification.__table__.create(db.engine, checkfirst=True)
-        NotificationRecipient.__table__.create(db.engine, checkfirst=True)
-        NotificationPreference.__table__.create(db.engine, checkfirst=True)
-        
-        logger.info("✓ Notification tables created successfully")
-        
-        return jsonify({
-            'status': 'success',
-            'message': 'Notification tables created successfully',
-            'tables': ['notifications', 'notification_recipients', 'notification_preferences']
-        })
-        
+        with app.app_context():
+            from models import Notification, NotificationRecipient, NotificationPreference
+            
+            logger.info("Creating notification tables...")
+            
+            # Force create notification tables
+            Notification.__table__.create(db.engine, checkfirst=True)
+            logger.info("✓ notifications table created/verified")
+            
+            NotificationRecipient.__table__.create(db.engine, checkfirst=True)
+            logger.info("✓ notification_recipients table created/verified")
+            
+            NotificationPreference.__table__.create(db.engine, checkfirst=True)
+            logger.info("✓ notification_preferences table created/verified")
+            
+            return jsonify({
+                'status': 'success',
+                'message': 'Notification tables created successfully',
+                'tables': [
+                    'notifications',
+                    'notification_recipients',
+                    'notification_preferences'
+                ]
+            }), 200
+            
     except Exception as e:
         logger.error(f"Notification table creation error: {e}")
         return jsonify({
@@ -268,75 +418,55 @@ def init_notification_tables():
             'message': str(e)
         }), 500
 
-@app.route('/init-db')
-def init_database_route():
-    """Manual database initialization for Render deployment"""
-    if os.environ.get('FLASK_ENV') != 'production':
-        return jsonify(error='This route is only available in production'), 403
-    
+@app.route('/check-db')
+def check_database():
+    """
+    Check database status and list all tables
+    Useful for debugging
+    """
     try:
-        # Import all models to ensure they're registered
-        from models import User, Admin, StudentProfile, StudentFeeTransaction, StudentFeeBalance, Notification, NotificationRecipient, NotificationPreference
-        
-        # Create all tables in correct dependency order
-        try:
-            # Create User table first (Admin depends on it)
-            User.__table__.create(db.engine, checkfirst=True)
-            logger.info("✓ User table created/verified")
+        with app.app_context():
+            from sqlalchemy import inspect
+            inspector = inspect(db.engine)
+            tables = inspector.get_table_names()
             
-            # Create Admin table (depends on User)
-            Admin.__table__.create(db.engine, checkfirst=True)
-            logger.info("✓ Admin table created/verified")
+            # Check for critical tables
+            critical_tables = [
+                'user', 'admin', 'student_profile',
+                'notifications', 'notification_recipients',
+                'course', 'assignment', 'quiz', 'exam'
+            ]
             
-            # Create other core tables
-            StudentProfile.__table__.create(db.engine, checkfirst=True)
-            logger.info("✓ StudentProfile table created/verified")
+            missing_tables = [t for t in critical_tables if t not in tables]
             
-            StudentFeeTransaction.__table__.create(db.engine, checkfirst=True)
-            logger.info("✓ StudentFeeTransaction table created/verified")
+            # Check for SuperAdmin
+            from models import Admin
+            superadmin_exists = Admin.query.filter_by(username='SuperAdmin').first() is not None
             
-            StudentFeeBalance.__table__.create(db.engine, checkfirst=True)
-            logger.info("✓ StudentFeeBalance table created/verified")
-            
-            # Create notification tables
-            from models import Notification, NotificationRecipient, NotificationPreference
-            Notification.__table__.create(db.engine, checkfirst=True)
-            logger.info("✓ Notification table created/verified")
-            
-            NotificationRecipient.__table__.create(db.engine, checkfirst=True)
-            logger.info("✓ NotificationRecipient table created/verified")
-            
-            NotificationPreference.__table__.create(db.engine, checkfirst=True)
-            logger.info("✓ NotificationPreference table created/verified")
-            
-        except Exception as e:
-            if "already exists" in str(e):
-                logger.info("✓ Some database tables already exist")
-            else:
-                logger.error(f"Table creation error: {e}")
-        
-        # Create SuperAdmin if missing
-        try:
-            if not Admin.query.filter_by(username='SuperAdmin').first():
-                admin = Admin(username='SuperAdmin', admin_id='ADM001', email='admin@lms.com')
-                admin.set_password('Password123')
-                Admin.apply_superadmin_preset(admin)
-                db.session.add(admin)
-                db.session.commit()
-                logger.info("✓ SuperAdmin created")
-                return jsonify(status='success', message='Database initialized and SuperAdmin created')
-            else:
-                return jsonify(status='success', message='Database already initialized and SuperAdmin exists')
-        except Exception as e:
-            logger.error(f"SuperAdmin creation error: {e}")
-            return jsonify(status='error', message=f'SuperAdmin creation failed: {str(e)}'), 500
+            return jsonify({
+                'status': 'ok',
+                'total_tables': len(tables),
+                'tables': sorted(tables),
+                'critical_tables_status': {
+                    'missing': missing_tables,
+                    'all_present': len(missing_tables) == 0
+                },
+                'superadmin_exists': superadmin_exists,
+                'database_url_set': bool(os.environ.get('DATABASE_URL')),
+                'recommendation': 'Run /init-db to initialize database' if missing_tables else 'Database looks good!'
+            }), 200
             
     except Exception as e:
-        logger.error(f"Database init error: {e}")
-        return jsonify(status='error', message=str(e)), 500
+        logger.error(f"Database check failed: {e}")
+        return jsonify({
+            'status': 'error',
+            'error': str(e),
+            'recommendation': 'Database connection failed. Check DATABASE_URL environment variable.'
+        }), 500
 
 # ===== Blueprints =====
-# Import and register all blueprints
+logger.info("📦 Registering blueprints...")
+
 from admin_routes import admin_bp
 from student_routes import student_bp
 from teacher_routes import teacher_bp
@@ -359,7 +489,7 @@ app.register_blueprint(results_bp, url_prefix='/student-results')
 app.register_blueprint(create_student_transcript_blueprint())
 app.register_blueprint(admissions_bp, url_prefix='/admissions')
 
-logger.info("✓ All blueprints registered")
+logger.info("✅ All blueprints registered successfully")
 
 # ===== Static Files =====
 @app.route('/static/<path:filename>')
@@ -374,37 +504,86 @@ def static_files(filename):
 # ===== Error Handlers =====
 @app.errorhandler(404)
 def not_found_error(error):
+    """Handle 404 errors"""
     return render_template('404.html'), 404
 
 @app.errorhandler(500)
 def internal_error(error):
+    """Handle 500 errors"""
     logger.error(f"Internal server error: {error}")
+    db.session.rollback()  # Rollback any failed database transactions
     return render_template('500.html'), 500
 
-# ===== Debug Routes =====
+@app.errorhandler(Exception)
+def handle_exception(e):
+    """Handle all unhandled exceptions"""
+    logger.exception("Unhandled exception: %s", e)
+    db.session.rollback()
+    
+    if IS_PRODUCTION:
+        return render_template('500.html'), 500
+    else:
+        # In development, show full error
+        raise e
+
+# ===== Debug Routes (Development Only) =====
 @app.route('/debug/routes')
 def debug_routes():
     """List all registered routes (debug only)"""
-    if not app.debug:
+    if IS_PRODUCTION:
         abort(404)
     
     routes = []
     for rule in app.url_map.iter_rules():
         routes.append({
             'endpoint': rule.endpoint,
-            'methods': list(rule.methods),
+            'methods': ', '.join(sorted(rule.methods - {'HEAD', 'OPTIONS'})),
             'path': str(rule)
         })
     
-    return "<pre>" + "\n".join([str(r) for r in sorted(routes, key=lambda x: x['path'])]) + "</pre>"
+    routes_html = "<h1>Registered Routes</h1><table border='1'><tr><th>Path</th><th>Methods</th><th>Endpoint</th></tr>"
+    for route in sorted(routes, key=lambda x: x['path']):
+        routes_html += f"<tr><td>{route['path']}</td><td>{route['methods']}</td><td>{route['endpoint']}</td></tr>"
+    routes_html += "</table>"
+    
+    return routes_html
 
-# ===== Run =====
+@app.route('/debug/config')
+def debug_config():
+    """Show current configuration (development only)"""
+    if IS_PRODUCTION:
+        abort(404)
+    
+    config_items = {
+        'IS_PRODUCTION': IS_PRODUCTION,
+        'FLASK_ENV': os.environ.get('FLASK_ENV', 'not set'),
+        'RENDER': os.environ.get('RENDER', 'not set'),
+        'DATABASE_URL': 'set' if os.environ.get('DATABASE_URL') else 'not set',
+        'SECRET_KEY': 'set' if app.config.get('SECRET_KEY') else 'not set',
+        'SOCKETIO_ASYNC_MODE': SOCKETIO_ASYNC_MODE
+    }
+    
+    config_html = "<h1>Configuration</h1><table border='1'><tr><th>Key</th><th>Value</th></tr>"
+    for key, value in config_items.items():
+        config_html += f"<tr><td>{key}</td><td>{value}</td></tr>"
+    config_html += "</table>"
+    
+    return config_html
+
+# ===== Application Startup =====
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
-    logger.info("Starting LMS app")
-    logger.info("Environment: %s", "PRODUCTION" if IS_PRODUCTION else "LOCAL")
-    logger.info("SocketIO mode: %s", SOCKETIO_ASYNC_MODE)
-
+    
+    logger.info("=" * 60)
+    logger.info("STARTING LMS APPLICATION")
+    logger.info("=" * 60)
+    logger.info(f"Environment: {'PRODUCTION' if IS_PRODUCTION else 'DEVELOPMENT'}")
+    logger.info(f"SocketIO mode: {SOCKETIO_ASYNC_MODE}")
+    logger.info(f"Host: {'0.0.0.0' if IS_PRODUCTION else '127.0.0.1'}")
+    logger.info(f"Port: {port}")
+    logger.info("=" * 60)
+    
+    # Run the application
     socketio.run(
         app,
         host="0.0.0.0" if IS_PRODUCTION else "127.0.0.1",
