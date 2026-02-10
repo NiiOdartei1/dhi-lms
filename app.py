@@ -134,6 +134,8 @@ def initialize_database():
             (User, "user"),
             (Admin, "admin"),
             (StudentProfile, "student_profile"),
+            (StudentFeeBalance, "student_fee_balance"),
+            (StudentFeeTransaction, "student_fee_transaction"),
             (Notification, "notifications"),
             (NotificationRecipient, "notification_recipients"),
             (NotificationPreference, "notification_preferences"),
