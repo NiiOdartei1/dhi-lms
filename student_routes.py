@@ -1628,17 +1628,10 @@ def my_appointments():
 
         return redirect(url_for('student.book_appointment'))
 
-
-
     bookings = AppointmentBooking.query \
-
         .filter_by(student_id=student_profile.id) \
-
         .options(joinedload(AppointmentBooking.slot).joinedload(AppointmentSlot.teacher)) \
-
         .all()
-
-
 
     return render_template('student/my_appointments.html', bookings=bookings)
 
