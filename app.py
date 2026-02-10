@@ -117,10 +117,16 @@ def initialize_database():
         )
         logger.info("✅ All models imported successfully")
         
-        # Create all tables using db.create_all() - this is the safest method
+        # Create all tables using db.create_all() - this is safest method
         logger.info("🔨 Creating all database tables...")
-        db.create_all()
-        logger.info("✅ db.create_all() completed successfully")
+        try:
+            db.create_all()
+            logger.info("✅ db.create_all() completed successfully")
+        except Exception as e:
+            if "already exists" in str(e).lower() or "duplicate" in str(e).lower():
+                logger.info("✅ Some tables/indexes already exist - continuing...")
+            else:
+                logger.warning(f"⚠️ db.create_all() warning: {e}")
         
         # Double-check critical tables exist by trying to create them explicitly
         logger.info("🔍 Verifying critical tables...")
@@ -138,7 +144,7 @@ def initialize_database():
                 model.__table__.create(db.engine, checkfirst=True)
                 logger.info(f"  ✓ {table_name}")
             except Exception as e:
-                if "already exists" in str(e).lower():
+                if "already exists" in str(e).lower() or "duplicate" in str(e).lower():
                     logger.info(f"  ✓ {table_name} (already exists)")
                 else:
                     logger.warning(f"  ⚠️ {table_name}: {e}")
