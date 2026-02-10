@@ -5369,3 +5369,13 @@ def create_voucher():
         pass
     return render_template('admin/create_voucher.html')
 
+
+@admin_bp.route('/logout')
+@login_required
+def logout():
+    """Admin logout route"""
+    from flask_login import logout_user
+    logout_user()
+    flash('You have been logged out successfully.', 'success')
+    return redirect(url_for('select_portal'))
+
