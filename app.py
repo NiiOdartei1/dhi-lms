@@ -137,6 +137,14 @@ def initialize_database():
             (Notification, "notifications"),
             (NotificationRecipient, "notification_recipients"),
             (NotificationPreference, "notification_preferences"),
+            (Course, "course"),
+            (Assignment, "assignment"),
+            (Quiz, "quiz"),
+            (Exam, "exam"),
+            (StudentCourseRegistration, "student_course_registration"),
+            (CourseMaterial, "course_material"),
+            (TimetableEntry, "timetable_entry"),
+            (TeacherProfile, "teacher_profile"),
         ]
         
         for model, table_name in critical_tables:
@@ -293,6 +301,15 @@ def home():
 def select_portal():
     """Portal selection page"""
     return render_template('portal_selection.html')
+
+@app.route('/logout')
+@login_required
+def logout():
+    """Global logout route - redirects to appropriate portal"""
+    from flask_login import logout_user
+    logout_user()
+    flash('You have been logged out successfully.', 'success')
+    return redirect(url_for('select_portal'))
 
 @app.route('/portal/<portal>')
 def redirect_to_portal(portal):
