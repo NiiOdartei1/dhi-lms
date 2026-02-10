@@ -40,6 +40,12 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 app.config.from_object(Config)
 
+# Initialize extensions with app
+db.init_app(app)
+migrate = Migrate(app, db)
+mail.init_app(app)
+socketio.init_app(app, cors_allowed_origins="*", async_mode='threading')
+
 # Auto-initialize database for Render (runs on every startup in production)
 if os.environ.get('FLASK_ENV') == 'production':
     with app.app_context():
