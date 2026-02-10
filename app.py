@@ -56,7 +56,7 @@ if os.environ.get('FLASK_ENV') == 'production':
             
             # Create SuperAdmin if missing
             if not Admin.query.filter_by(username='SuperAdmin').first():
-                admin = Admin(username='SuperAdmin', admin_id='ADM001', email='admin@lms.com')
+                admin = Admin(username='SuperAdmin', admin_id='ADM001')
                 admin.set_password('Password123')
                 Admin.apply_superadmin_preset(admin)
                 db.session.add(admin)

@@ -74,8 +74,8 @@ class Admin(db.Model, UserMixin):
     Format: firstname.lastname@admin.dhi.edu.gh
     """
     
-    email = db.Column(db.String(120), unique=True, nullable=False)
-    """Email address for admin account (must be unique)"""
+    email = db.Column(db.String(120), unique=True, nullable=True)
+    """Email address for admin account (optional)"""
     
     password_hash = db.Column(db.String(255), nullable=False)
     """Hashed password (never store plain passwords)"""
