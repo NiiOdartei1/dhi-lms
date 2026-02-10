@@ -21,7 +21,6 @@ from werkzeug.utils import secure_filename
 # Load environment variables
 from dotenv import load_dotenv
 load_dotenv()
-from models import Admin, StudentProfile, User
 
 # ===== Extensions & Config =====
 from flask_login import LoginManager, login_required, logout_user, current_user
@@ -29,6 +28,9 @@ from flask_migrate import Migrate
 from flask_wtf.csrf import CSRFProtect, CSRFError, generate_csrf
 from utils.extensions import db, mail, socketio
 from config import Config
+
+# Import all models to ensure they're registered with SQLAlchemy
+from models import Admin, StudentProfile, User
 
 # ===== Logging =====
 logging.basicConfig(level=logging.INFO)
@@ -292,6 +294,36 @@ def health():
         return jsonify(status='ok', service='lms', now=datetime.utcnow().isoformat()), 200
     except Exception:
         return jsonify(status='error'), 500
+
+@app.route('/init-db')
+def init_database_route():
+    """Manual database initialization for Render deployment"""
+    if os.environ.get('FLASK_ENV') != 'production':
+        return jsonify(error='This route is only available in production'), 403
+    
+    try:
+        # Import all models
+        from models import User, Admin, StudentProfile, StudentFeeTransaction, StudentFeeBalance
+        
+        # Create all tables
+        db.create_all()
+        logger.info("✓ Database tables created/verified")
+        
+        # Create SuperAdmin if missing
+        if not Admin.query.filter_by(username='SuperAdmin').first():
+            admin = Admin(username='SuperAdmin', admin_id='ADM001')
+            admin.set_password('Password123')
+            Admin.apply_superadmin_preset(admin)
+            db.session.add(admin)
+            db.session.commit()
+            logger.info("✓ SuperAdmin created")
+            return jsonify(status='success', message='Database initialized and SuperAdmin created')
+        else:
+            return jsonify(status='success', message='Database already initialized')
+            
+    except Exception as e:
+        logger.error(f"Database init error: {e}")
+        return jsonify(status='error', message=str(e)), 500
 
 # ===== Run =====
 if __name__ == "__main__":
