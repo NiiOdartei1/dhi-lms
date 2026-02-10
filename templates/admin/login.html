@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+{% extends "layout.html" %}
 {% block title %}Admin Login{% endblock %}
 
 {% block content %}
@@ -44,7 +44,7 @@
 
     <!-- Forgot Password -->
     <div class="text-center mt-3">
-      <a href="{{ url_for('auth.forgot_password') }}" class="text-decoration-none">Forgot Password?</a>
+      <a href="#" class="text-decoration-none" onclick="alert('Contact your administrator to reset password')">Forgot Password?</a>
     </div>
   </div>
 </div>
