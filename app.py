@@ -128,6 +128,54 @@ def initialize_database():
             else:
                 logger.warning(f"⚠️ db.create_all() warning: {e}")
         
+        # Explicitly create critical tables that might be missing
+        logger.info("🔍 Explicitly creating critical tables...")
+        critical_models = [
+            User, Admin, StudentProfile, TeacherProfile,
+            PasswordResetRequest, PasswordResetToken,
+            ProgrammeFeeStructure, StudentFeeBalance, StudentFeeTransaction,
+            Notification, NotificationRecipient, NotificationPreference,
+            Course, CourseLimit, StudentCourseRegistration, TimetableEntry,
+            CourseMaterial, CourseAssessmentScheme,
+            Assignment, AssignmentSubmission, Quiz, StudentQuizSubmission,
+            Question, Option, StudentAnswer, QuizAttempt,
+            Exam, ExamQuestion, ExamOption, ExamSet, ExamSetQuestion,
+            ExamAttempt, ExamSubmission, ExamAnswer, ExamTimetableEntry,
+            GradingScale, StudentCourseGrade, SemesterResultRelease,
+            AcademicCalendar, AcademicYear, SchoolSettings,
+            AppointmentSlot, AppointmentBooking,
+            Meeting, Recording, Conversation, ConversationParticipant,
+            Message, MessageReaction,
+            TeacherCourseAssignment, TeacherAssessment,
+            TeacherAssessmentAnswer, TeacherAssessmentPeriod,
+            TeacherAssessmentQuestion,
+            ProgrammeCohort, StudentPromotion
+        ]
+        
+        for model in critical_models:
+            try:
+                model.__table__.create(db.engine, checkfirst=True)
+                logger.info(f"✅ Created table: {model.__tablename__}")
+            except Exception as e:
+                if "already exists" in str(e).lower():
+                    logger.info(f"✅ Table already exists: {model.__tablename__}")
+                else:
+                    logger.warning(f"⚠️ Could not create table {model.__tablename__}: {e}")
+        
+        logger.info("🔍 Verifying table creation...")
+        inspector = db.inspect(db.engine)
+        table_names = inspector.get_table_names()
+        logger.info(f"📊 Total tables in database: {len(table_names)}")
+        logger.info(f"📋 Tables: {', '.join(sorted(table_names))}")
+        
+        # Check for specific missing tables
+        required_tables = [model.__tablename__ for model in critical_models]
+        missing_tables = set(required_tables) - set(table_names)
+        if missing_tables:
+            logger.error(f"❌ Missing tables: {', '.join(missing_tables)}")
+        else:
+            logger.info("✅ All required tables exist!")
+        
         # Create SuperAdmin if missing
         logger.info("� Checking SuperAdmin account...")
         if not Admin.query.filter_by(username='SuperAdmin').first():
