@@ -66,18 +66,22 @@ def dashboard():
 def inject_notification_count():
     unread_count = 0
     if current_user.is_authenticated:
-        from models import NotificationRecipient
+        try:
+            from models import NotificationRecipient
 
-        if hasattr(current_user, "user_id"):  
-            # Regular User (student, teacher)
-            unread_count = NotificationRecipient.query.filter_by(
-                user_id=current_user.user_id,
-                is_read=False
-            ).count()
+            if hasattr(current_user, "user_id"):  
+                # Regular User (student, teacher)
+                unread_count = NotificationRecipient.query.filter_by(
+                    user_id=current_user.user_id,
+                    is_read=False
+                ).count()
 
-        elif hasattr(current_user, "admin_id"):  
-            # Admin → get all unread notifications
-            unread_count = NotificationRecipient.query.filter_by(is_read=False).count()
+            elif hasattr(current_user, "admin_id"):  
+                # Admin → get all unread notifications
+                unread_count = NotificationRecipient.query.filter_by(is_read=False).count()
+        except Exception as e:
+            # Tables don't exist yet, return 0
+            unread_count = 0
 
     return dict(unread_count=unread_count)
 
