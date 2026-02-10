@@ -164,7 +164,7 @@ from vclass_routes import vclass_bp
 from chat_routes import chat_bp
 from finance_routes import finance_bp
 from student_results_routes import results_bp
-from student_transcript_routes import transcript_bp
+from student_transcript_routes import create_student_transcript_blueprint
 from admissions.routes import admissions_bp
 
 app.register_blueprint(admin_bp, url_prefix='/admin')
@@ -175,7 +175,7 @@ app.register_blueprint(vclass_bp, url_prefix='/vclass')
 app.register_blueprint(chat_bp, url_prefix='/chat')
 app.register_blueprint(finance_bp, url_prefix='/finance')
 app.register_blueprint(results_bp, url_prefix='/student-results')
-app.register_blueprint(transcript_bp, url_prefix='/transcript')
+app.register_blueprint(create_student_transcript_blueprint(), url_prefix='/transcript')
 app.register_blueprint(admissions_bp, url_prefix='/admissions')
 
 logger.info("✓ All blueprints registered")
