@@ -90,7 +90,7 @@ except ImportError:
 # ===== Login Manager =====
 login_manager = LoginManager()
 login_manager.init_app(app)
-login_manager.login_view = 'student.student_login'
+login_manager.login_view = 'admin.admin_login'
 
 @login_manager.user_loader
 def load_user(user_id):
