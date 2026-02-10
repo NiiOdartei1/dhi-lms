@@ -175,6 +175,35 @@ def health():
     except Exception:
         return jsonify(status='error'), 500
 
+@app.route('/init-notification-tables')
+def init_notification_tables():
+    """Force create notification tables"""
+    if os.environ.get('FLASK_ENV') != 'production':
+        return jsonify(error='This route is only available in production'), 403
+    
+    try:
+        from models import Notification, NotificationRecipient, NotificationPreference
+        
+        # Force create notification tables
+        Notification.__table__.create(db.engine, checkfirst=True)
+        NotificationRecipient.__table__.create(db.engine, checkfirst=True)
+        NotificationPreference.__table__.create(db.engine, checkfirst=True)
+        
+        logger.info("✓ Notification tables created successfully")
+        
+        return jsonify({
+            'status': 'success',
+            'message': 'Notification tables created successfully',
+            'tables': ['notifications', 'notification_recipients', 'notification_preferences']
+        })
+        
+    except Exception as e:
+        logger.error(f"Notification table creation error: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
 @app.route('/init-db')
 def init_database_route():
     """Manual database initialization for Render deployment"""
@@ -183,7 +212,7 @@ def init_database_route():
     
     try:
         # Import all models to ensure they're registered
-        from models import User, Admin, StudentProfile, StudentFeeTransaction, StudentFeeBalance
+        from models import User, Admin, StudentProfile, StudentFeeTransaction, StudentFeeBalance, Notification, NotificationRecipient, NotificationPreference
         
         # Create all tables in correct dependency order
         try:
