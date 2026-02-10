@@ -314,9 +314,6 @@ if __name__ == "__main__":
     logger.info("Environment: %s", "PRODUCTION" if IS_PRODUCTION else "LOCAL")
     logger.info("SocketIO mode: %s", SOCKETIO_ASYNC_MODE)
 
-    with app.app_context():
-        one_time_init()
-
     socketio.run(
         app,
         host="0.0.0.0" if IS_PRODUCTION else "127.0.0.1",
