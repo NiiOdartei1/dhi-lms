@@ -90,7 +90,7 @@
           <label class="form-label fw-bold">
             <i class="fas fa-calendar text-danger"></i> {{ form.academic_year.label }}
           </label>
-          {{ form.academic_year(class="form-control", placeholder="e.g. 2024/2025") }}
+          {{ form.academic_year(class="form-control", placeholder="e.g. 2025") }}
           {% for err in form.academic_year.errors %}
             <div class="text-danger small">{{ err }}</div>
           {% endfor %}
