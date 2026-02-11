@@ -69,11 +69,6 @@ def initialize_database():
         logger.info("🔧 DATABASE INITIALIZATION STARTING...")
         logger.info("=" * 60)
         
-        # Debug database configuration
-        from config import Config
-        logger.info(f"🔗 Database URL: {Config.SQLALCHEMY_DATABASE_URI}")
-        logger.info(f"🌍 Environment: {'PRODUCTION (Render)' if os.environ.get('RENDER') else 'LOCAL DEVELOPMENT'}")
-        
         # Import ALL models to ensure they're registered with SQLAlchemy
         logger.info("📦 Importing all models...")
         from models import (

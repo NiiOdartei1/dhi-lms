@@ -43,7 +43,7 @@ class ResultBuilder:
             "school_address": getattr(settings, "school_address", ""),
             "school_logo": getattr(settings, "school_logo", ""),
         }
-        academic_year = getattr(settings, "current_academic_year", "2024 / 2025")
+        academic_year = getattr(settings, "current_academic_year", "2025")
         semester = getattr(settings, "current_semester", "1")
 
         # === EXAM RESULTS ===

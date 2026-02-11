@@ -21,7 +21,12 @@ from datetime import datetime, timedelta
 # =====================================================
 admissions_bp = Blueprint('admissions', __name__, template_folder='templates', static_folder='static', static_url_path="/admissions/static", url_prefix='/admissions')
 
-PDFKIT_CONFIG = pdfkit.configuration()
+# Initialize pdfkit configuration with error handling
+try:
+    PDFKIT_CONFIG = pdfkit.configuration()
+except Exception as e:
+    print(f"Warning: wkhtmltopdf not found. PDF generation will be disabled. Error: {e}")
+    PDFKIT_CONFIG = None
 
 # =====================================================
 # Applicant login required decorator
@@ -823,6 +828,11 @@ def download_application_pdf():
     html = render_template('admissions/application_pdf.html', application=application)
 
     try:
+        # Check if pdfkit is available
+        if PDFKIT_CONFIG is None:
+            flash("PDF generation is not available. Please install wkhtmltopdf.", "danger")
+            return redirect(url_for('admissions.dashboard'))
+            
         # Generate PDF
         pdf = pdfkit.from_string(html, False, configuration=PDFKIT_CONFIG, options={
             'enable-local-file-access': None,  # allow local images/css

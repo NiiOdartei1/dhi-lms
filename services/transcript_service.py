@@ -24,7 +24,7 @@ class TranscriptService:
         
         Args:
             student_id (int): User.id
-            academic_year (str): e.g., "2024/2025"
+            academic_year (str): e.g., "2025"
             semester (str): e.g., "1" or "2"
             
         Returns:
@@ -260,7 +260,7 @@ class TranscriptService:
         Check if results for a semester have been released.
         
         Args:
-            academic_year (str): e.g., "2024/2025"
+            academic_year (str): e.g., "2025"
             semester (str): e.g., "1" or "2"
             
         Returns:

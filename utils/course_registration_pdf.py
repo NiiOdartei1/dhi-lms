@@ -17,7 +17,7 @@ def generate_course_registration_pdf(student, registered_courses, semester, acad
         student: Current user object (from Flask-Login)
         registered_courses: List of StudentCourseRegistration objects
         semester: Semester name (e.g., 'First')
-        academic_year: Year (e.g., '2024/2025')
+        academic_year: Year (e.g., '2025')
         logo_path: Full path to logo file (optional)
     
     Returns:
