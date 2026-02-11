@@ -2242,7 +2242,7 @@ def add_meeting():
         meeting = Meeting(
             title=form.title.data,
             description=form.description.data,
-            host_id=current_user.user_id,
+            host_id=current_user.id,
             course_id=form.course_id.data,
             meeting_code=zoom_meeting["id"],
             scheduled_start=form.scheduled_start.data,
