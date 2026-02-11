@@ -2044,34 +2044,40 @@ def restore_quiz():
 @admin_bp.route('/exams')
 @login_required
 def manage_exams():
-    exams = Exam.query.order_by(Exam.start_datetime.desc()).all()
-    return render_template('admin/manage_exams.html', exams=exams)
+    try:
+        exams = Exam.query.order_by(Exam.start_datetime.desc()).all()
+        return render_template('admin/manage_exams.html', exams=exams)
+    except Exception as e:
+        logger.error(f"Error in manage_exams: {e}")
+        flash(f"Error loading exams: {e}", "error")
+        return render_template('admin/manage_exams.html', exams=[])
 
 def admin_only():
     if getattr(current_user, 'role', None) != 'admin':
         abort(403)
-
-# 1. List sets & question pool for an exam
-@admin_bp.route('/exam/<int:exam_id>/sets', methods=['GET'])
 @login_required
 def exam_sets(exam_id):
-    exam = Exam.query.get_or_404(exam_id)
+    try:
+        exam = Exam.query.get_or_404(exam_id)
+        
+        pool_questions = ExamQuestion.query.filter_by(exam_id=exam.id).order_by(ExamQuestion.id).all()
+        sets = ExamSet.query.filter_by(exam_id=exam.id).order_by(ExamSet.id).all()
+        
+        set_q_map = {}
+        for s in sets:
+            set_q_map[s.id] = [sq.question_id for sq in s.set_questions]
 
-    pool_questions = ExamQuestion.query.filter_by(exam_id=exam.id).order_by(ExamQuestion.id).all()
-
-    sets = ExamSet.query.filter_by(exam_id=exam.id).order_by(ExamSet.id).all()
-
-    set_q_map = {}
-    for s in sets:
-        set_q_map[s.id] = [sq.question_id for sq in s.set_questions]
-
-    return render_template(
-        'admin/exam_sets.html',
-        exam=exam,
-        pool_questions=pool_questions,
-        sets=sets,
-        set_q_map=set_q_map
-    )
+        return render_template(
+            'admin/exam_sets.html',
+            exam=exam,
+            pool_questions=pool_questions,
+            sets=sets,
+            set_q_map=set_q_map
+        )
+    except Exception as e:
+        logger.error(f"Error in exam_sets: {e}")
+        flash(f"Error loading exam details: {e}", "error")
+        return redirect(url_for('admin.manage_exams'))
 
 # 2. Create a new set for exam
 @admin_bp.route('/exam/<int:exam_id>/sets/create', methods=['GET', 'POST'])
