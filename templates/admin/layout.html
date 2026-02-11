@@ -1294,7 +1294,7 @@
 
 
 
-      <a href="{{ url_for('grading.manage_grading') }}" class="{% if request.endpoint == 'grading.manage_grading' %}active{% endif %}">
+      <a href="{{ url_for('admin.manage_admissions') }}" class="{% if request.endpoint == 'admin.manage_admissions' %}active{% endif %}">
 
         <i class="fas fa-chart-bar"></i>
 
@@ -1324,7 +1324,7 @@
 
             <div class="accordion-body p-0">
 
-              <a href="{{ url_for('grading.manage_grading') }}" class="d-block px-3 py-1 text-decoration-none text-light">
+              <a href="{{ url_for('admin.manage_admissions') }}" class="d-block px-3 py-1 text-decoration-none text-light">
 
                 <i class="fas fa-list"></i> Manage
 
@@ -1336,7 +1336,7 @@
 
               </a>
 
-              <a href="{{ url_for('grading.past_releases') }}" class="d-block px-3 py-1 text-decoration-none text-light {% if request.endpoint == 'grading.past_releases' %}bg-secondary{% endif %}">
+              <a href="{{ url_for('admin.manage_admissions') }}" class="d-block px-3 py-1 text-decoration-none text-light {% if request.endpoint == 'admin.manage_admissions' %}bg-secondary{% endif %}">
 
                 <i class="fas fa-history"></i> Past Releases
 
