@@ -345,13 +345,6 @@ body.dark-mode .btn-ghost {
   <i class="fas fa-tasks"></i><span class="nav-link-text">Assignments</span>
 </a>
 
-<!-- New: Manage Exams -->
-<a href="{{ url_for('teacher.manage_exams') }}"
-  role="menuitem"
-  data-endpoint="teacher.manage_exams"
-  class="{% if ep.startswith('teacher.manage_exams') or ep.startswith('teacher.add_exam') or ep.startswith('teacher.edit_exam') %}active{% endif %}">
-  <i class="fas fa-file-alt"></i><span class="nav-link-text">Exams</span>
-</a>
 
 <!-- New: View Exam Timetable -->
 <a href="{{ url_for('teacher.view_exam_timetable') }}"
