@@ -8,6 +8,8 @@ from datetime import datetime
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+# Ping service to keep Render server awake - deployed 2026-02-11
+
 class RenderPingService:
     def __init__(self, app_url, ping_interval=14*60):  # 14 minutes (less than 15 min sleep time)
         self.app_url = app_url.rstrip('/')
