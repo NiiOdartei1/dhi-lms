@@ -4919,6 +4919,11 @@ def view_database():
 
         except Exception as e:
 
+            try:
+                db.session.rollback()
+            except Exception:
+                pass
+
             # Skip models whose tables don't exist
 
             logger.warning(f"Skipping {name} table: {e}")
