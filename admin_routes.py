@@ -2066,37 +2066,6 @@ with granular permission control
 
 
 
-def generate_unique_username(first_name, middle_name, last_name, role):
-
-    """Generate a unique username"""
-
-    base = f"{first_name.lower()}.{last_name.lower()}".replace(' ', '')
-
-    
-
-    if role in ['finance_admin', 'academic_admin', 'admissions_admin', 'superadmin']:
-
-        username = f"{base}@admin.dhi.edu.gh"
-
-    else:
-
-        username = f"{base}@dhi.edu.gh"
-
-    
-
-    counter = 1
-
-    original_username = username
-
-    while User.query.filter_by(username=username).first() or Admin.query.filter_by(username=username).first():
-
-        username = f"{base}{counter}@dhi.edu.gh"
-
-        counter += 1
-
-    
-
-    return username
 
 
 
