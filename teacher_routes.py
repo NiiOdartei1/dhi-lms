@@ -1666,7 +1666,7 @@ def manage_slots():
     now = datetime.now()
     expired_slots = AppointmentSlot.query.filter(
         AppointmentSlot.teacher_id == teacher.id,
-        db.func.datetime(AppointmentSlot.date, AppointmentSlot.end_time) < now,
+        (AppointmentSlot.date + AppointmentSlot.end_time) < now,
         AppointmentSlot.is_booked == False  # Optional: only delete unbooked
     ).all()
 
