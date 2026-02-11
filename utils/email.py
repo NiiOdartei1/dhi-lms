@@ -241,3 +241,91 @@ def send_approval_credentials_email(applicant, username, student_id, temp_passwo
             f"Failed to send approval credentials email to {applicant.email}: {str(e)}"
         )
         return False
+
+
+# ------------------------------------------------------------------
+# TEACHER REGISTRATION CREDENTIALS EMAIL
+# ------------------------------------------------------------------
+
+def send_teacher_registration_email(email, first_name, last_name, username, user_id, employee_id, temp_password):
+    """
+    Send registration credentials to newly created teacher
+    """
+    name = f"{first_name} {last_name}"
+    
+    subject = "Your Teacher Account is Ready – DHI LMS"
+    
+    body = f"""
+Dear {name},
+
+Your teacher account has been successfully created at DHI College of Health & Education.
+
+Your login credentials are:
+- Username: {username}
+- User ID: {user_id}
+- Employee ID: {employee_id}
+- Temporary Password: {temp_password}
+
+Please log in immediately at the Teacher Portal and change your password to keep your account secure.
+
+Login URL: {url_for('teacher.login', _external=True)}
+
+Important:
+- Keep your credentials confidential
+- Change your password on first login
+- Contact IT support if you have any issues
+
+Best regards,
+DHI College of Health & Education
+IT Department
+"""
+
+    return send_email(email, subject, body)
+
+
+# ------------------------------------------------------------------
+# ADMIN REGISTRATION CREDENTIALS EMAIL
+# ------------------------------------------------------------------
+
+def send_admin_registration_email(email, first_name, last_name, username, admin_id, role, temp_password):
+    """
+    Send registration credentials to newly created admin
+    """
+    name = f"{first_name} {last_name}"
+    
+    role_display = {
+        'finance_admin': 'Finance Admin',
+        'academic_admin': 'Academic Admin', 
+        'admissions_admin': 'Admissions Admin',
+        'superadmin': 'Super Admin'
+    }.get(role, role.replace('_', ' ').title())
+    
+    subject = f"Your {role_display} Account is Ready – DHI LMS"
+    
+    body = f"""
+Dear {name},
+
+Your {role_display} account has been successfully created at DHI College of Health & Education.
+
+Your login credentials are:
+- Username: {username}
+- Admin ID: {admin_id}
+- Role: {role_display}
+- Temporary Password: {temp_password}
+
+Please log in immediately at the Admin Portal and change your password to keep your account secure.
+
+Login URL: {url_for('admin.login', _external=True)}
+
+Important:
+- Keep your credentials confidential
+- Change your password on first login
+- Contact IT support if you have any issues
+- Your role permissions have been configured accordingly
+
+Best regards,
+DHI College of Health & Education
+System Administration
+"""
+
+    return send_email(email, subject, body)

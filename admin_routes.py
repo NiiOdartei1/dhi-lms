@@ -18,6 +18,8 @@ from datetime import date, datetime, timedelta, time
 
 from sqlalchemy import extract, asc, desc
 
+from utils.email import send_teacher_registration_email, send_admin_registration_email
+
 from sqlalchemy.orm import joinedload
 
 from sqlalchemy.exc import IntegrityError
@@ -2353,9 +2355,23 @@ def register_user():
 
             db.session.commit()
 
-
-
-            flash(f"✅ Teacher registered! User ID: {user_id} | Employee ID: {employee_id}", "success")
+            # Send registration email with credentials
+            try:
+                email_sent = send_teacher_registration_email(
+                    email=email,
+                    first_name=first_name,
+                    last_name=last_name,
+                    username=username,
+                    user_id=user_id,
+                    employee_id=employee_id,
+                    temp_password=temp_password
+                )
+                if email_sent:
+                    flash(f"✅ Teacher registered! User ID: {user_id} | Employee ID: {employee_id} | Credentials sent to {email}", "success")
+                else:
+                    flash(f"✅ Teacher registered! User ID: {user_id} | Employee ID: {employee_id} | ⚠️ Email failed to send", "warning")
+            except Exception as e:
+                flash(f"✅ Teacher registered! User ID: {user_id} | Employee ID: {employee_id} | ⚠️ Email error: {str(e)}", "warning")
 
             return redirect(url_for('admin.dashboard'))
 
@@ -2449,9 +2465,23 @@ def register_user():
 
             db.session.commit()
 
-
-
-            flash(f"✅ {new_admin.role_display} registered! Admin ID: {admin_id}", "success")
+            # Send registration email with credentials
+            try:
+                email_sent = send_admin_registration_email(
+                    email=email or username,
+                    first_name=first_name,
+                    last_name=last_name,
+                    username=username,
+                    admin_id=admin_id,
+                    role=role,
+                    temp_password=temp_password
+                )
+                if email_sent:
+                    flash(f"✅ {new_admin.role_display} registered! Admin ID: {admin_id} | Credentials sent to {email or username}", "success")
+                else:
+                    flash(f"✅ {new_admin.role_display} registered! Admin ID: {admin_id} | ⚠️ Email failed to send", "warning")
+            except Exception as e:
+                flash(f"✅ {new_admin.role_display} registered! Admin ID: {admin_id} | ⚠️ Email error: {str(e)}", "warning")
 
             return redirect(url_for('admin.dashboard'))
 
