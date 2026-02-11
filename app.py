@@ -115,6 +115,12 @@ def initialize_database():
             ProgrammeCohort, StudentPromotion,
             PasswordResetRequest, PasswordResetToken
         )
+        
+        # Import admission models
+        from admissions.models import (
+            Applicant, Application, ApplicationDocument, AdmissionVoucher,
+            ApplicationResult, ApplicationPayment
+        )
         logger.info("✅ All models imported successfully")
         
         # Create all tables using db.create_all() - this is safest method
@@ -128,204 +134,90 @@ def initialize_database():
             else:
                 logger.warning(f"⚠️ db.create_all() warning: {e}")
         
-        # Explicitly create critical tables that might be missing
-        logger.info("🔍 Explicitly creating critical tables...")
-        
-        # Order tables by dependencies to avoid foreign key errors
-        core_models = [
-            User, Admin, StudentProfile, TeacherProfile,
-            PasswordResetRequest, PasswordResetToken,
-            ProgrammeFeeStructure, StudentFeeBalance, StudentFeeTransaction,
-            Notification, NotificationRecipient, NotificationPreference,
-            Course, CourseLimit, StudentCourseRegistration, TimetableEntry,
-            CourseMaterial, CourseAssessmentScheme,
-            AcademicCalendar, AcademicYear, SchoolSettings,
-            ProgrammeCohort, StudentPromotion
+        # Double-check critical tables exist by trying to create them explicitly
+        logger.info("🔍 Verifying critical tables...")
+        critical_tables = [
+            (User, "user"),
+            (Admin, "admin"),
+            (StudentProfile, "student_profile"),
+            (ProgrammeFeeStructure, "programme_fee_structure"),
+            (StudentFeeBalance, "student_fee_balance"),
+            (StudentFeeTransaction, "student_fee_transaction"),
+            (Notification, "notifications"),
+            (NotificationRecipient, "notification_recipients"),
+            (NotificationPreference, "notification_preferences"),
+            (Course, "course"),
+            (Assignment, "assignment"),
+            (Quiz, "quiz"),
+            (Exam, "exam"),
+            (StudentCourseRegistration, "student_course_registration"),
+            (CourseMaterial, "course_material"),
+            (TimetableEntry, "timetable_entry"),
+            (TeacherProfile, "teacher_profile"),
+            # Admission models
+            (Applicant, "applicant"),
+            (Application, "application"),
+            (ApplicationDocument, "application_document"),
+            (AdmissionVoucher, "admission_voucher"),
+            (ApplicationResult, "application_result"),
+            (ApplicationPayment, "application_payment"),
         ]
         
-        # Quiz-related tables (need to be created in order)
-        quiz_models = [
-            Quiz, QuizAttempt, StudentQuizSubmission
-        ]
-        
-        # Handle circular dependency between question and options
-        logger.info("🔄 Handling circular dependency for question/options tables...")
-        try:
-            from sqlalchemy import text
-            with db.engine.connect() as conn:
-                # Drop tables completely if they exist
-                try:
-                    conn.execute(text("DROP TABLE IF EXISTS student_answers CASCADE"))
-                    conn.execute(text("DROP TABLE IF EXISTS question CASCADE"))
-                    conn.execute(text("DROP TABLE IF EXISTS options CASCADE"))
-                    conn.commit()
-                    logger.info("✅ Dropped existing tables")
-                except Exception as e:
-                    logger.info(f"⚠️ No tables to drop: {e}")
-                
-                # Create question table without foreign key constraints
-                conn.execute(text("""
-                    CREATE TABLE question (
-                        id SERIAL PRIMARY KEY,
-                        quiz_id INTEGER NOT NULL REFERENCES quiz(id),
-                        text TEXT NOT NULL,
-                        points FLOAT NOT NULL DEFAULT 1.0,
-                        question_type VARCHAR(50) NOT NULL DEFAULT 'mcq',
-                        correct_option_id INTEGER
-                    )
-                """))
-                logger.info("✅ Created question table")
-                
-                # Create options table without foreign key constraints
-                conn.execute(text("""
-                    CREATE TABLE options (
-                        id SERIAL PRIMARY KEY,
-                        question_id INTEGER NOT NULL,
-                        text VARCHAR(1000) NOT NULL,
-                        is_correct BOOLEAN DEFAULT FALSE,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                    )
-                """))
-                logger.info("✅ Created options table")
-                
-                # Create student_answers table
-                conn.execute(text("""
-                    CREATE TABLE student_answers (
-                        id SERIAL PRIMARY KEY,
-                        attempt_id INTEGER NOT NULL REFERENCES quiz_attempt(id) ON DELETE CASCADE,
-                        question_id INTEGER NOT NULL REFERENCES question(id) ON DELETE CASCADE,
-                        quiz_id INTEGER NOT NULL REFERENCES quiz(id) ON DELETE CASCADE,
-                        student_id INTEGER NOT NULL REFERENCES "user"(id) ON DELETE CASCADE,
-                        selected_option_id INTEGER REFERENCES options(id) ON DELETE SET NULL,
-                        answer_text TEXT,
-                        is_correct BOOLEAN DEFAULT FALSE,
-                        time_spent_seconds INTEGER,
-                        answered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        CONSTRAINT uq_attempt_question UNIQUE (attempt_id, question_id)
-                    )
-                """))
-                logger.info("✅ Created student_answers table")
-                
-                # Now add the foreign key constraint for correct_option_id
-                try:
-                    conn.execute(text("ALTER TABLE question ADD CONSTRAINT question_correct_option_id_fkey FOREIGN KEY (correct_option_id) REFERENCES options(id)"))
-                    conn.execute(text("ALTER TABLE options ADD CONSTRAINT options_question_id_fkey FOREIGN KEY (question_id) REFERENCES question(id) ON DELETE CASCADE"))
-                    conn.commit()
-                    logger.info("✅ Added foreign key constraints")
-                except Exception as e:
-                    logger.warning(f"⚠️ Could not add constraints: {e}")
-                    conn.commit()
-                    
-        except Exception as e:
-            logger.error(f"❌ Manual table creation failed: {e}")
-            # Fallback: try to create without constraints
+        for model, table_name in critical_tables:
             try:
-                Question.__table__.create(db.engine, checkfirst=True)
-                Option.__table__.create(db.engine, checkfirst=True)
-                StudentAnswer.__table__.create(db.engine, checkfirst=True)
-                logger.info("✅ Created tables with fallback method")
-            except Exception as fallback_e:
-                logger.error(f"❌ Fallback also failed: {fallback_e}")
+                model.__table__.create(db.engine, checkfirst=True)
+                logger.info(f"  ✓ {table_name}")
+            except Exception as e:
+                if "already exists" in str(e).lower() or "duplicate" in str(e).lower():
+                    logger.info(f"  ✓ {table_name} (already exists)")
+                else:
+                    logger.warning(f"  ⚠️ {table_name}: {e}")
+                    # Rollback any failed transaction
+                    db.session.rollback()
         
-        # Now create the remaining quiz-related tables
-        remaining_quiz_models = [
-            # StudentAnswer is created manually above
-        ]
+        # Check how many tables were created
+        from sqlalchemy import inspect
+        inspector = inspect(db.engine)
+        all_tables = inspector.get_table_names()
+        logger.info(f"📊 Total tables in database: {len(all_tables)}")
         
-        # Assignment-related tables
-        assignment_models = [
-            Assignment, AssignmentSubmission
-        ]
+        # Create SuperAdmin if it doesn't exist
+        logger.info("👤 Checking for SuperAdmin account...")
+        existing_admin = Admin.query.filter_by(username='SuperAdmin').first()
         
-        # Exam-related tables
-        exam_models = [
-            Exam, ExamQuestion, ExamOption, ExamSet, ExamSetQuestion,
-            ExamAttempt, ExamSubmission, ExamAnswer, ExamTimetableEntry
-        ]
-        
-        # Grading tables
-        grading_models = [
-            GradingScale, StudentCourseGrade, SemesterResultRelease
-        ]
-        
-        # Appointment tables
-        appointment_models = [
-            AppointmentSlot, AppointmentBooking
-        ]
-        
-        # Communication tables
-        communication_models = [
-            Meeting, Recording, Conversation, ConversationParticipant,
-            Message, MessageReaction
-        ]
-        
-        # Teacher assessment tables
-        teacher_assessment_models = [
-            TeacherCourseAssignment, TeacherAssessmentPeriod,
-            TeacherAssessmentQuestion, TeacherAssessment,
-            TeacherAssessmentAnswer
-        ]
-        
-        # Create tables in dependency order
-        all_model_groups = [
-            core_models, quiz_models, remaining_quiz_models, assignment_models, 
-            exam_models, grading_models, appointment_models,
-            communication_models, teacher_assessment_models
-        ]
-        
-        for model_group in all_model_groups:
-            for model in model_group:
-                try:
-                    model.__table__.create(db.engine, checkfirst=True)
-                    logger.info(f"✅ Created table: {model.__tablename__}")
-                except Exception as e:
-                    if "already exists" in str(e).lower():
-                        logger.info(f"✅ Table already exists: {model.__tablename__}")
-                    else:
-                        logger.warning(f"⚠️ Could not create table {model.__tablename__}: {e}")
-        
-        logger.info("🔍 Verifying table creation...")
-        inspector = db.inspect(db.engine)
-        table_names = inspector.get_table_names()
-        logger.info(f"📊 Total tables in database: {len(table_names)}")
-        logger.info(f"📋 Tables: {', '.join(sorted(table_names))}")
-        
-        # Check for specific missing tables
-        all_models = (core_models + quiz_models + remaining_quiz_models + assignment_models + 
-                      exam_models + grading_models + appointment_models +
-                      communication_models + teacher_assessment_models)
-        required_tables = [model.__tablename__ for model in all_models]
-        missing_tables = set(required_tables) - set(table_names)
-        if missing_tables:
-            logger.error(f"❌ Missing tables: {', '.join(missing_tables)}")
-        else:
-            logger.info("✅ All required tables exist!")
-        
-        # Create SuperAdmin if missing
-        logger.info("� Checking SuperAdmin account...")
-        if not Admin.query.filter_by(username='SuperAdmin').first():
-            admin = Admin(username='SuperAdmin', admin_id='ADM001')
+        if not existing_admin:
+            logger.info("🔧 Creating SuperAdmin account...")
+            admin = Admin(
+                username='SuperAdmin',
+                admin_id='ADM001',
+                email='admin@lms.com'
+            )
             admin.set_password('Password123')
             Admin.apply_superadmin_preset(admin)
-            
             db.session.add(admin)
             db.session.commit()
             logger.info("✅ SuperAdmin created successfully")
+            logger.info("   Username: SuperAdmin")
+            logger.info("   Password: Password123")
+            logger.info("   Admin ID: ADM001")
         else:
             logger.info("✅ SuperAdmin already exists")
         
-        logger.info("=" * 70)
-        logger.info("✅✅✅ DATABASE INITIALIZATION COMPLETE - ALL TABLES READY ✅✅✅")
-        logger.info("=" * 70)
+        logger.info("=" * 60)
+        logger.info("✅ DATABASE INITIALIZATION COMPLETE")
+        logger.info("=" * 60)
         
-        return True, "Database initialization completed successfully"
+        return True, "Database initialized successfully"
         
     except Exception as e:
-        logger.error(f"❌ Database initialization failed: {e}")
-        db.session.rollback()
-        return False, f"Database initialization failed: {str(e)}"
+        error_msg = f"Database initialization error: {str(e)}"
+        logger.error("=" * 60)
+        logger.error("❌ DATABASE INITIALIZATION FAILED")
+        logger.error(error_msg)
+        logger.error("=" * 60)
+        import traceback
+        logger.error(traceback.format_exc())
+        return False, error_msg
 
 # ===== Auto-Initialize Database on Startup (Production Only) =====
 if IS_PRODUCTION:

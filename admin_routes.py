@@ -3036,6 +3036,7 @@ def profile():
 #========================== Database Management ==========================
 # in your route
 from models import *
+from admissions.models import Applicant, Application, ApplicationDocument, AdmissionVoucher, ApplicationResult, ApplicationPayment
 
 def serialize(obj):
     if hasattr(obj, 'to_dict'):
@@ -3107,6 +3108,13 @@ MODELS = {
     "Teacher Assessments": TeacherAssessment,
     "Teacher Assessment Answers": TeacherAssessmentAnswer,
     "Student Promotions": StudentPromotion,
+    # Admission models
+    "Applicants": Applicant,
+    "Applications": Application,
+    "Application Documents": ApplicationDocument,
+    "Admission Vouchers": AdmissionVoucher,
+    "Application Results": ApplicationResult,
+    "Application Payments": ApplicationPayment,
 }
 
 @admin_bp.route("/settings/result-template", methods=["GET", "POST"])
