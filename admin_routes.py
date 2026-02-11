@@ -4830,64 +4830,36 @@ def serialize(obj):
 
 
 
-MODELS = {
-    "Admins": Admin,
-    "Users": User,
-    "Password Reset Requests": PasswordResetRequest,
-    "Password Reset Tokens": PasswordResetToken,
-    "Programme Cohorts": ProgrammeCohort,
-    "School Settings": SchoolSettings,
-    "Students": StudentProfile,
-    "Teachers": TeacherProfile,
-    "Programme Fee Structures": ProgrammeFeeStructure,
-    "Student Fee Transactions": StudentFeeTransaction,
-    "Student Fee Balances": StudentFeeBalance,
-    "Quizzes": Quiz,
-    "Questions": Question,
-    "Options": Option,
-    "Student Answers": StudentAnswer,
-    "Quiz Attempts": QuizAttempt,
-    "Quiz Submissions": StudentQuizSubmission,
-    "Assignments": Assignment,
-    "Assignment Submissions": AssignmentSubmission,
-    "Grading Scales": GradingScale,
-    "Student Course Grades": StudentCourseGrade,
-    "Course Materials": CourseMaterial,
-    "Courses": Course,
-    "Course Limits": CourseLimit,
-    "Student Course Registrations": StudentCourseRegistration,
-    "Semester Result Releases": SemesterResultRelease,
-    "Timetable Entries": TimetableEntry,
-    "Teacher Course Assignments": TeacherCourseAssignment,
-    "Course Assessment Schemes": CourseAssessmentScheme,
-    "Attendance Records": AttendanceRecord,
-    "Academic Calendar": AcademicCalendar,
-    "Academic Years": AcademicYear,
-    "Appointment Slots": AppointmentSlot,
-    "Appointment Bookings": AppointmentBooking,
-    "Exams": Exam,
-    "Exam Sets": ExamSet,
-    "Exam Questions": ExamQuestion,
-    "Exam Set Questions": ExamSetQuestion,
-    "Exam Options": ExamOption,
-    "Exam Attempts": ExamAttempt,
-    "Exam Submissions": ExamSubmission,
-    "Exam Answers": ExamAnswer,
-    "Exam Timetable Entries": ExamTimetableEntry,
-    "Notifications": Notification,
-    "Notification Recipients": NotificationRecipient,
-    "Notification Preferences": NotificationPreference,
-    "Meetings": Meeting,
-    "Recordings": Recording,
-    "Conversations": Conversation,
-    "Conversation Participants": ConversationParticipant,
-    "Messages": Message,
-    "Message Reactions": MessageReaction,
-    "Teacher Assessment Periods": TeacherAssessmentPeriod,
-    "Teacher Assessment Questions": TeacherAssessmentQuestion,
-    "Teacher Assessments": TeacherAssessment,
-    "Teacher Assessment Answers": TeacherAssessmentAnswer,
-}
+def _pretty_model_name(cls):
+    name = getattr(cls, '__name__', str(cls))
+    out = []
+    for i, ch in enumerate(name):
+        if i and ch.isupper() and (name[i - 1].islower() or (i + 1 < len(name) and name[i + 1].islower())):
+            out.append(' ')
+        out.append(ch)
+    return ''.join(out)
+
+
+def get_models_dict():
+    models = {}
+    try:
+        mappers = list(db.Model.registry.mappers)
+    except Exception:
+        mappers = []
+
+    for mapper in mappers:
+        cls = getattr(mapper, 'class_', None)
+        if not cls:
+            continue
+        if not hasattr(cls, '__table__'):
+            continue
+        if not hasattr(cls, 'query'):
+            continue
+
+        pretty = _pretty_model_name(cls)
+        if pretty not in models:
+            models[pretty] = cls
+    return models
 
 
 
@@ -4935,7 +4907,9 @@ def view_database():
 
     data = {}
 
-    for name, model in MODELS.items():
+    models = get_models_dict()
+
+    for name, model in models.items():
 
         try:
 
@@ -4980,6 +4954,8 @@ def slugify_model_name(name: str) -> str:
 
 
 def resolve_model_from_slug(slug: str):
+
+    MODELS = get_models_dict()
 
     # direct match first (in case you ever pass the exact key)
 
@@ -5192,6 +5168,8 @@ def delete_record(model, record_id):
     # Accept flexible model identifiers (case-insensitive, singular/plural, underscores/dashes)
 
     def resolve_model(key):
+
+        MODELS = get_models_dict()
 
         # direct match
 
