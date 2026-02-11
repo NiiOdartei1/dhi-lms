@@ -39,6 +39,28 @@ mail.init_app(app)
 socketio.init_app(app, cors_allowed_origins="*", async_mode='threading')
 csrf = CSRFProtect(app)
 
+# ===== Health Check Endpoint =====
+@app.route('/health')
+def health_check():
+    """Health check endpoint for monitoring services"""
+    return {
+        'status': 'healthy',
+        'timestamp': datetime.utcnow().isoformat(),
+        'service': 'DHI-LMS'
+    }
+
+# ===== Ping Service for Render =====
+if os.environ.get('RENDER') or app.config.get('ENV') == 'production':
+    try:
+        from keep_alive import start_ping_service
+        app_url = os.environ.get('APP_URL', 'https://dhi-lms-lk64.onrender.com')
+        start_ping_service(app_url)
+        logger.info(f"🔄 Started ping service for {app_url}")
+    except ImportError:
+        logger.warning("⚠️ Could not import ping service")
+    except Exception as e:
+        logger.error(f"❌ Failed to start ping service: {e}")
+
 # ===== Logging =====
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
