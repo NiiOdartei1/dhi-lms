@@ -4831,135 +4831,37 @@ def serialize(obj):
 
 
 MODELS = {
-
     "Admins": Admin,
-
     "Users": User,
-
     "Students": StudentProfile,
-
     "Teachers": TeacherProfile,
-
     "Password Reset Requests": PasswordResetRequest,
-
     "Password Reset Tokens": PasswordResetToken,
-
-    "Programme Cohorts": ProgrammeCohort,
-
-    "School Settings": SchoolSettings,
-
     "Fee Structures": ProgrammeFeeStructure,
-
     "Fee Transactions": StudentFeeTransaction,
-
     "Fee Balances": StudentFeeBalance,
-
     "Quizzes": Quiz,
-
     "Questions": Question,
-
     "Options": Option,
-
-    "Quiz Attempts": QuizAttempt,
-
-    "Student Answers": StudentAnswer,
-
-    "Quiz Submissions": StudentQuizSubmission,
-
     "Assignments": Assignment,
-
     "Assignment Submissions": AssignmentSubmission,
-
     "Course Materials": CourseMaterial,
-
     "Courses": Course,
-
-    "Course Limits": CourseLimit,
-
-    "Registrations": StudentCourseRegistration,
-
-    "Course Assessment Schemes": CourseAssessmentScheme,
-
-    "Student Course Grades": StudentCourseGrade,
-
-    "Grading Scales": GradingScale,
-
-    "Semester Result Releases": SemesterResultRelease,
-
-    "Timetable": TimetableEntry,
-
-    "Teacher-Course Assignments": TeacherCourseAssignment,
-
-    "Attendance": AttendanceRecord,
-
-    "Academic Calendar": AcademicCalendar,
-
-    "Academic Years": AcademicYear,
-
-    "Appointments Slots": AppointmentSlot,
-
-    "Appointments": AppointmentBooking,
-
     "Exams": Exam,
-
-    "Exam Sets": ExamSet,
-
-    "Exam Questions": ExamQuestion,
-
-    "Exam Set Questions": ExamSetQuestion,
-
-    "Exam Options": ExamOption,
-
     "Exam Submissions": ExamSubmission,
-
+    "Exam Questions": ExamQuestion,
     "Exam Attempts": ExamAttempt,
-
-    "Exam Answers": ExamAnswer,
-
-    "Exam Timetable": ExamTimetableEntry,
-
-    "Notifications": Notification,
-
-    "Notification Recipients": NotificationRecipient,
-
-    "Notification Preferences": NotificationPreference,
-
+    "Exam Options": ExamOption,
+    "Exam Sets": ExamSet,
+    "Exam Set Questions": ExamSetQuestion,
+    "Quiz Submissions": StudentQuizSubmission,
     "Meetings": Meeting,
-
     "Recordings": Recording,
-
-    "Conversations": Conversation,
-
-    "Conversation Participants": ConversationParticipant,
-
-    "Messages": Message,
-
-    "Message Reactions": MessageReaction,
-
-    "Teacher Assessment Periods": TeacherAssessmentPeriod,
-
-    "Teacher Assessment Questions": TeacherAssessmentQuestion,
-
-    "Teacher Assessments": TeacherAssessment,
-
-    "Teacher Assessment Answers": TeacherAssessmentAnswer,
-
-    "Student Promotions": StudentPromotion,
-
-    # Admission models
-
-    "Applicants": Applicant,
-
-    "Applications": Application,
-
-    "Application Documents": ApplicationDocument,
-
-    "Admission Vouchers": AdmissionVoucher,
-
-    "Application Results": ApplicationResult,
-
-    "Application Payments": ApplicationPayment,
-
+    "Appointment Slots": AppointmentSlot,
+    "Appointment Bookings": AppointmentBooking,
+    "Timetable Entries": TimetableEntry,
+    "Academic Calendar": AcademicCalendar,
+    "Academic Years": AcademicYear,
 }
 
 
