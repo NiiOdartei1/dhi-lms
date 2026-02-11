@@ -429,13 +429,9 @@ body.dark-mode .btn-ghost {
       </a>
 
       <!-- Notifications & Logout -->
-      {% if 'teacher.notifications' in current_app.view_functions %}
-        <a href="{{ url_for('teacher.notifications') }}" role="menuitem" class="{% if ep.startswith('teacher.notifications') %}active{% endif %}">
-          <i class="fas fa-bell"></i><span class="nav-link-text">Notifications</span>
-        </a>
-      {% else %}
-        <a href="#" class="disabled text-muted"><i class="fas fa-bell"></i>Notifications</a>
-      {% endif %}
+      <a href="{{ url_for('teacher.notifications') }}" role="menuitem" class="{% if ep.startswith('teacher.notifications') %}active{% endif %}">
+        <i class="fas fa-bell"></i><span class="nav-link-text">Notifications</span>
+      </a>
       
       <a href="{{ url_for('logout') }}" role="menuitem" data-endpoint="logout">
         <i class="fas fa-sign-out-alt"></i><span class="nav-link-text">Logout</span>
