@@ -161,7 +161,7 @@
                   <div class="text-end ms-2">
                     <div class="small text-muted">{{ (m.file_type or '').upper() }}</div>
                     <div class="mt-2">
-                      <a href="{{ url_for('vclass.download_material', filename=m.filename) }}" class="btn btn-sm btn-outline-secondary me-1" target="_blank">Open</a>
+                      <a href="{{ url_for('teacher.download_material', filename=m.filename) }}" class="btn btn-sm btn-outline-secondary me-1" target="_blank">Open</a>
                       <button class="btn btn-sm btn-outline-danger delete-btn-sm" data-url="{{ url_for('teacher.delete_material', material_id=m.id) }}" title="Delete">Delete</button>
                     </div>
                   </div>
@@ -226,7 +226,7 @@
               </span>
             </td>
             <td class="text-end">
-              <a href="{{ url_for('vclass.download_material', filename=m.filename) }}" class="btn btn-sm btn-outline-secondary me-1" target="_blank">Open</a>
+              <a href="{{ url_for('teacher.download_material', filename=m.filename) }}" class="btn btn-sm btn-outline-secondary me-1" target="_blank">Open</a>
               <a href="{{ url_for('teacher.edit_material', material_id=m.id) }}" class="btn btn-sm btn-outline-primary me-1">Edit</a>
               <button class="btn btn-sm btn-outline-danger delete-btn" data-url="{{ url_for('teacher.delete_material', material_id=m.id) }}">Delete</button>
             </td>

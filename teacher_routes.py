@@ -3,7 +3,7 @@ import json
 import re
 import tempfile
 from zipfile import ZipFile
-from flask import Blueprint, render_template, abort, flash, redirect, url_for, request, jsonify, current_app
+from flask import Blueprint, render_template, abort, flash, redirect, url_for, request, jsonify, current_app, send_from_directory
 from flask_login import login_required, current_user, login_user
 import requests
 from wtforms import SelectField
@@ -174,14 +174,10 @@ def assessment_scheme(course_id):
         flash("You are not registered for this course.", "danger")
         return redirect(url_for('teacher.assessment_scheme_list'))
 
-    # Determine current academic year based on today's date
-    today = date.today()
-    current_year_obj = AcademicYear.query.filter(
-        AcademicYear.start_date <= today,
-        AcademicYear.end_date >= today
-    ).first()
-
-    academic_year = f"{current_year_obj.start_date.year}/{current_year_obj.end_date.year}" if current_year_obj else f"{today.year}/{today.year + 1}"
+    # Determine current academic year from SchoolSettings
+    from models import SchoolSettings
+    settings = SchoolSettings.query.first()
+    academic_year = str(settings.current_academic_year) if settings else str(date.today().year)
 
     # Fetch or create scheme
     scheme = CourseAssessmentScheme.query.filter_by(course_id=course_id, teacher_id=profile.id).first()
@@ -485,6 +481,23 @@ def delete_material(material_id):
     db.session.commit()
     flash('Material deleted.', 'info')
     return redirect(url_for('teacher.manage_materials'))
+
+@teacher_bp.route('/materials/download/<path:filename>')
+@login_required
+def download_material(filename):
+    """Download course material for teachers"""
+    if current_user.role != 'teacher':
+        abort(403)
+    
+    try:
+        return send_from_directory(
+            current_app.config['MATERIALS_FOLDER'],
+            filename,
+            as_attachment=True
+        )
+    except FileNotFoundError:
+        flash('Material not found.', 'danger')
+        return redirect(url_for('teacher.manage_materials'))
 
 @teacher_bp.route('/manage-assignments')
 @login_required
@@ -2133,13 +2146,46 @@ def meetings():
 # -------------------------
 # Zoom helpers
 # -------------------------
+import requests
+from flask import current_app
+from requests.auth import HTTPBasicAuth
+
 def get_zoom_access_token():
+    """
+    Get access token from Zoom (Server-to-Server OAuth)
+    """
     url = "https://zoom.us/oauth/token"
-    params = {"grant_type": "account_credentials", "account_id": current_app.config["ZOOM_ACCOUNT_ID"]}
-    auth = (current_app.config["ZOOM_CLIENT_ID"], current_app.config["ZOOM_CLIENT_SECRET"])
-    response = requests.post(url, params=params, auth=auth)
-    response.raise_for_status()
-    return response.json()["access_token"]
+
+    client_id = current_app.config.get("ZOOM_CLIENT_ID")
+    client_secret = current_app.config.get("ZOOM_CLIENT_SECRET")
+    account_id = current_app.config.get("ZOOM_ACCOUNT_ID")
+
+    if not client_id or not client_secret:
+        raise Exception("Zoom client credentials are not configured (ZOOM_CLIENT_ID / ZOOM_CLIENT_SECRET)")
+
+    headers = {"Content-Type": "application/x-www-form-urlencoded"}
+
+    # If an account_id is provided, try the account_credentials flow first
+    if account_id:
+        data = {"grant_type": "account_credentials", "account_id": account_id}
+        resp = requests.post(url, data=data, auth=HTTPBasicAuth(client_id, client_secret), headers=headers)
+        current_app.logger.info(f"Zoom token (account_credentials) response: {resp.status_code} - {resp.text}")
+        if resp.status_code == 200:
+            token_data = resp.json()
+            current_app.logger.info(f"Zoom token keys: {list(token_data.keys())}")
+            return token_data.get("access_token")
+
+    # Fallback: standard client_credentials grant (Server-to-Server OAuth)
+    data = {"grant_type": "client_credentials"}
+    resp = requests.post(url, data=data, auth=HTTPBasicAuth(client_id, client_secret), headers=headers)
+    current_app.logger.info(f"Zoom token (client_credentials) response: {resp.status_code} - {resp.text}")
+    if resp.status_code != 200:
+        current_app.logger.error(f"Zoom token error: {resp.status_code} - {resp.text}")
+        raise Exception(f"Failed to get Zoom token: {resp.status_code} - {resp.text}")
+
+    token_data = resp.json()
+    current_app.logger.info(f"Zoom token keys: {list(token_data.keys())}")
+    return token_data.get("access_token")
 
 def create_zoom_meeting(topic, start_time, duration_min=60):
     token = get_zoom_access_token()
@@ -2149,7 +2195,7 @@ def create_zoom_meeting(topic, start_time, duration_min=60):
     }
     body = {
         "topic": topic,
-        "type": 2,  # scheduled meeting
+        "type": 2,
         "start_time": start_time.isoformat(),
         "duration": duration_min,
         "settings": {
@@ -2157,9 +2203,24 @@ def create_zoom_meeting(topic, start_time, duration_min=60):
             "mute_upon_entry": True
         }
     }
-    response = requests.post("https://api.zoom.us/v2/users/me/meetings", json=body, headers=headers)
+
+    url = "https://api.zoom.us/v2/users/me/meetings"
+    response = requests.post(url, headers=headers, json=body)
+
+    if response.status_code == 201:
+        return response.json()
+
+    # Log details for debugging (do not log full token in production)
+    token_preview = (token[:20] + "...") if token else "<no-token>"
+    current_app.logger.error(
+        f"Zoom meeting creation error: {response.status_code} - {response.text} - token_preview={token_preview}"
+    )
+
+    if response.status_code == 401:
+        raise Exception(f"Failed to create Zoom meeting: {response.status_code} - {response.text}")
+
     response.raise_for_status()
-    return response.json()
+
 
 # -------------------------
 # Add meeting
