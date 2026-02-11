@@ -49,6 +49,10 @@ def health_check():
         'service': 'DHI-LMS'
     }
 
+# ===== Logging =====
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 # ===== Ping Service for Render =====
 if os.environ.get('RENDER') or app.config.get('ENV') == 'production':
     try:
@@ -60,10 +64,6 @@ if os.environ.get('RENDER') or app.config.get('ENV') == 'production':
         logger.warning("⚠️ Could not import ping service")
     except Exception as e:
         logger.error(f"❌ Failed to start ping service: {e}")
-
-# ===== Logging =====
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 # ===== Configuration =====
 # Check if we're in production (Render deployment)
