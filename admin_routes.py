@@ -6671,13 +6671,9 @@ def manage_promotions():
         
 
         # Get available academic years
-
         academic_years = db.session.query(StudentCourseGrade.academic_year)\
-
             .distinct()\
-
             .order_by(StudentCourseGrade.academic_year.desc())\
-
             .all()
 
         academic_years = [year[0] for year in academic_years if year[0]]
