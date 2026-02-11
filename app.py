@@ -39,31 +39,9 @@ mail.init_app(app)
 socketio.init_app(app, cors_allowed_origins="*", async_mode='threading')
 csrf = CSRFProtect(app)
 
-# ===== Health Check Endpoint =====
-@app.route('/health')
-def health_check():
-    """Health check endpoint for monitoring services"""
-    return {
-        'status': 'healthy',
-        'timestamp': datetime.utcnow().isoformat(),
-        'service': 'DHI-LMS'
-    }
-
 # ===== Logging =====
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-# ===== Ping Service for Render =====
-if os.environ.get('RENDER') or app.config.get('ENV') == 'production':
-    try:
-        from keep_alive import start_ping_service
-        app_url = os.environ.get('APP_URL', 'https://dhi-lms-lk64.onrender.com')
-        start_ping_service(app_url)
-        logger.info(f"🔄 Started ping service for {app_url}")
-    except ImportError:
-        logger.warning("⚠️ Could not import ping service")
-    except Exception as e:
-        logger.error(f"❌ Failed to start ping service: {e}")
 
 # ===== Configuration =====
 # Check if we're in production (Render deployment)
@@ -90,6 +68,11 @@ def initialize_database():
         logger.info("=" * 60)
         logger.info("🔧 DATABASE INITIALIZATION STARTING...")
         logger.info("=" * 60)
+        
+        # Debug database configuration
+        from config import Config
+        logger.info(f"🔗 Database URL: {Config.SQLALCHEMY_DATABASE_URI}")
+        logger.info(f"🌍 Environment: {'PRODUCTION (Render)' if os.environ.get('RENDER') else 'LOCAL DEVELOPMENT'}")
         
         # Import ALL models to ensure they're registered with SQLAlchemy
         logger.info("📦 Importing all models...")
