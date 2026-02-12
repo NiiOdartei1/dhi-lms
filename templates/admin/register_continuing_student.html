@@ -99,8 +99,8 @@
                             </h5>
 
                             <div class="mb-3">
-                                <label for="email" class="form-label">Email Address</label>
-                                <input type="email" class="form-control" id="email" name="email">
+                                <label for="email" class="form-label">Email Address <span class="text-danger">*</span></label>
+                                <input type="email" class="form-control" id="email" name="email" required placeholder="student@example.com">
                             </div>
 
                             <div class="mb-3">
@@ -516,13 +516,14 @@ function updateChecklist(hasCredentials) {
 function checkFormValidity() {
     const firstName = firstNameInput.value.trim();
     const lastName = lastNameInput.value.trim();
+    const email = document.getElementById('email').value.trim();
     const programme = document.getElementById('current_programme').value;
     const level = document.getElementById('programme_level').value;
     const username = usernameInput.value.trim();
     const password = passwordInput.value.trim();
     const indexNumber = document.getElementById('index_number').value.trim();
 
-    const isValid = firstName && lastName && programme && level && username && password && indexNumber;
+    const isValid = firstName && lastName && email && programme && level && username && password && indexNumber;
 
     submitBtn.disabled = !isValid;
     submitBtn.title = isValid ? '✅ Ready to register' : '⚠️ Complete all required fields and verify credentials';
@@ -542,6 +543,9 @@ document.getElementById('current_programme').addEventListener('change', function
 });
 
 document.getElementById('programme_level').addEventListener('change', checkFormValidity);
+
+document.getElementById('email').addEventListener('input', checkFormValidity);
+document.getElementById('email').addEventListener('change', checkFormValidity);
 
 // ============================================================
 // IMAGE PREVIEW
