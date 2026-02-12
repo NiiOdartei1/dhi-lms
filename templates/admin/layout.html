@@ -1288,7 +1288,7 @@
 
 
 
-      <a href="{{ url_for('admin.manage_admissions') }}" class="{% if request.endpoint == 'admin.manage_admissions' %}active{% endif %}">
+      <a href="{{ url_for('admin.result_vetting_list') }}" class="{% if request.endpoint == 'admin.result_vetting_list' %}active{% endif %}">
 
         <i class="fas fa-chart-bar"></i>
 
@@ -1318,9 +1318,9 @@
 
             <div class="accordion-body p-0">
 
-              <a href="{{ url_for('admin.manage_admissions') }}" class="d-block px-3 py-1 text-decoration-none text-light">
+              <a href="{{ url_for('admin.result_vetting_list') }}" class="d-block px-3 py-1 text-decoration-none text-light {% if request.endpoint == 'admin.result_vetting_list' %}bg-secondary{% endif %}">
 
-                <i class="fas fa-list"></i> Manage
+                <i class="fas fa-list"></i> Results
 
               </a>
 
@@ -1330,7 +1330,7 @@
 
               </a>
 
-              <a href="{{ url_for('admin.manage_admissions') }}" class="d-block px-3 py-1 text-decoration-none text-light {% if request.endpoint == 'admin.manage_admissions' %}bg-secondary{% endif %}">
+              <a href="{{ url_for('admin.result_template_settings') }}" class="d-block px-3 py-1 text-decoration-none text-light {% if request.endpoint == 'admin.result_template_settings' %}bg-secondary{% endif %}">
 
                 <i class="fas fa-history"></i> Past Releases
 
