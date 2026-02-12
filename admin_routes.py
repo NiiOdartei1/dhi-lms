@@ -1788,6 +1788,7 @@ def register_continuing_student():
 
             # Send credentials email to student
             if email:
+                logger.info(f"Attempting to send credentials email to continuing student: {email}")
                 try:
                     email_sent = send_continuing_student_credentials_email(
                         email=email,
@@ -1801,12 +1802,17 @@ def register_continuing_student():
                         level=programme_level
                     )
                     if email_sent:
+                        logger.info(f"✅ Successfully sent credentials email to {email}")
                         flash(f"📧 Credentials email sent to {email}", "info")
                     else:
+                        logger.warning(f"⚠️ Failed to send credentials email to {email}")
                         flash("⚠️ Student registered but email failed to send. Please provide credentials manually.", "warning")
                 except Exception as e:
-                    logger.error(f"Failed to send continuing student email: {e}")
+                    logger.error(f"❌ Exception sending continuing student email to {email}: {e}")
                     flash("⚠️ Student registered but email failed to send. Please provide credentials manually.", "warning")
+            else:
+                logger.info(f"⚠️ No email address provided for student {user_id} - skipping email sending")
+                flash("⚠️ Student registered without email address. No credentials email sent.", "warning")
 
             flash(f"✅ Continuing student '{first_name} {last_name}' registered successfully! Student ID: {user_id} | Username: {username} | Index: {index_number}", "success")
 
