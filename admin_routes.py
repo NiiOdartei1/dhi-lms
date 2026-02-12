@@ -1014,39 +1014,35 @@ def get_admin_dashboard_url(admin):
         return url_for('admin.dashboard')
 
 
-
 @admin_bp.route('/vetting/results')
-
 @login_required
-
 def result_vetting_list():
-
     if current_user.role not in ['superadmin', 'academic_admin']:
-
         abort(403)
 
-
-
     # Ensure DB schema has fields we expect (for older dev DBs)
-
     ensure_release_columns()
 
-
-
     # List semesters that have been submitted (locked) but not yet released
-
     submissions = SemesterResultRelease.query.filter_by(is_locked=True).order_by(SemesterResultRelease.locked_at.desc()).all()
-
-
-
     pending = [s for s in submissions if not s.is_released]
-
-
 
     return render_template('admin/result_vetting.html', submissions=pending)
 
 
+@admin_bp.route('/past-releases')
+@login_required
+def past_releases():
+    if current_user.role not in ['superadmin', 'academic_admin']:
+        abort(403)
 
+    # Ensure DB schema has fields we expect (for older dev DBs)
+    ensure_release_columns()
+
+    # List semesters that have been released
+    releases = SemesterResultRelease.query.filter_by(is_released=True).order_by(SemesterResultRelease.released_at.desc()).all()
+
+    return render_template('admin/past_releases.html', releases=releases)
 
 
 @admin_bp.route('/vetting/results/<int:release_id>')
