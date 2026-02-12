@@ -22,21 +22,23 @@ class Config:
 
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     
-    # Connection pool settings for production (reduced to prevent memory issues)
+    # Aggressive connection pool settings for production (prevent memory issues)
     SQLALCHEMY_ENGINE_OPTIONS = {
-        "pool_size": 5,         # Reduced from 10
-        "pool_recycle": 180,    # Reduced from 300 (3 minutes)
+        "pool_size": 3,         # Further reduced from 5
+        "pool_recycle": 120,    # Further reduced from 180 (2 minutes)
         "pool_pre_ping": True,
-        "max_overflow": 10      # Reduced from 20
+        "max_overflow": 5,       # Further reduced from 10
+        "pool_timeout": 30,     # Add timeout for getting connections
+        "pool_reset_on_return": "commit"  # Reset connections on return
     }
 
     MAX_CONTENT_LENGTH = 16 * 1024 * 1024  # 16MB uploads
 
-    # Memory management settings
-    MEMORY_LIMIT_MB = 512  # Limit memory usage to prevent worker timeouts
+    # Aggressive memory management settings
+    MEMORY_LIMIT_MB = 256  # Reduced from 512 - more aggressive threshold
     
-    # Periodic cleanup settings
-    CLEANUP_INTERVAL = 300  # 5 minutes
+    # More frequent cleanup settings
+    CLEANUP_INTERVAL = 180  # Reduced from 300 (3 minutes)
 
     # ------------------------------------------------------
     # BASE DIRECTORY

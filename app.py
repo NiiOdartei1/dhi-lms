@@ -75,7 +75,7 @@ def monitor_memory_usage():
                 memory_info = process.memory_info()
                 memory_mb = memory_info.rss / 1024 / 1024
                 
-                if memory_mb > memory_limit_mb * 0.8:  # 80% threshold
+                if memory_mb > memory_limit_mb * 0.6:  # Lowered from 80% to 60% for more aggressive cleanup
                     logger.warning(f"🧹 High memory usage detected: {memory_mb:.1f}MB - Performing cleanup")
                     
                     # Force garbage collection
@@ -91,7 +91,7 @@ def monitor_memory_usage():
                     memory_after = process.memory_info().rss / 1024 / 1024
                     logger.info(f"✅ Memory after cleanup: {memory_after:.1f}MB")
                 
-                time.sleep(app.config.get('CLEANUP_INTERVAL', 300))  # 5 minutes
+                time.sleep(app.config.get('CLEANUP_INTERVAL', 180))  # Reduced from 300 to 180
                 
             except Exception as e:
                 logger.error(f"Error in memory monitoring: {e}")
