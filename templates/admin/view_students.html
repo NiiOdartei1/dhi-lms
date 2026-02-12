@@ -43,7 +43,8 @@
                 <div class="d-flex align-items-center">
                   <img src="{{ url_for('static', filename='uploads/profile_pictures/' + student.profile_picture) }}" 
                        class="rounded-circle me-2" width="32" height="32" 
-                       onerror="this.src='{{ url_for('static', filename='uploads/profile_pictures/default_avatar.png') }}'">
+                       data-fallback="{{ url_for('static', filename='uploads/profile_pictures/default_avatar.png') }}"
+                       onerror="this.src=this.dataset.fallback;">
                   {{ student.first_name }} {{ student.last_name }}
                 </div>
               </td>
