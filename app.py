@@ -189,7 +189,7 @@ def initialize_database():
             logger.info("🔧 Creating SuperAdmin account...")
             admin = Admin(
                 username='SuperAdmin',
-                admin_id='ADM001',
+                admin_id='SUP001',
                 email='admin@lms.com'
             )
             admin.set_password('Password123')
@@ -199,7 +199,7 @@ def initialize_database():
             logger.info("✅ SuperAdmin created successfully")
             logger.info("   Username: SuperAdmin")
             logger.info("   Password: Password123")
-            logger.info("   Admin ID: ADM001")
+            logger.info("   Admin ID: SUP001")
         else:
             logger.info("✅ SuperAdmin already exists")
         

@@ -49,7 +49,7 @@ class Admin(db.Model, UserMixin):
     admin_id = db.Column(db.String(100), unique=True, nullable=True)
     """
     Unique admin identifier based on role
-    Examples: FIN001, FIN002, ACA001, ADM001, SAA001
+    Examples: FIN001, FIN002, ACA001, SUP001, SAA001
     Generated automatically when admin is created
     """
     

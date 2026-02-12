@@ -5945,7 +5945,7 @@ def manage_assignments():
 
     return render_template(
 
-        f'{current_user.role}/manage_assignments.html',
+        'admin/manage_assignments.html',
 
         assignments=assignments,
 
