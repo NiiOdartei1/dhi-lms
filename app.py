@@ -105,7 +105,9 @@ def monitor_memory_usage():
 # Start memory monitoring if in production
 if IS_PRODUCTION:
     try:
-        monitor_memory_usage()
+        # Temporarily disabled to test if monitoring is causing timeouts
+        logger.info("🔧 Memory monitoring temporarily disabled for testing")
+        # monitor_memory_usage()
     except ImportError:
         logger.warning("⚠️ psutil not available - memory monitoring disabled")
     except Exception as e:
