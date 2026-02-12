@@ -329,3 +329,43 @@ System Administration
 """
 
     return send_email(email, subject, body)
+
+
+def send_continuing_student_credentials_email(email, first_name, last_name, username, student_id, index_number, temp_password, programme, level):
+    """
+    Send registration credentials to newly created continuing student
+    """
+    name = f"{first_name} {last_name}"
+    
+    subject = "Your Student Account is Ready – DHI LMS Portal"
+    
+    body = f"""
+Dear {name},
+
+Your continuing student account has been successfully created at DHI College of Health & Education.
+
+Your login credentials are:
+- Username: {username}
+- Student ID: {student_id}
+- Index Number: {index_number}
+- Temporary Password: {temp_password}
+- Programme: {programme}
+- Level: {level}
+
+Please log in immediately at the Student Portal and change your password to keep your account secure.
+
+Login URL: {url_for('vclass.login', _external=True)}
+
+Important:
+- Keep your credentials confidential
+- Change your password on first login
+- Complete your profile information
+- Contact IT support if you have any issues
+- Your academic records have been updated for the new level
+
+Best regards,
+DHI College of Health & Education
+Student Administration
+"""
+
+    return send_email(email, subject, body)

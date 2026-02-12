@@ -48,7 +48,7 @@ from utils.receipts import generate_receipt
 
 from utils.index_generator import generate_index_number
 
-from utils.email import send_approval_credentials_email, send_email, send_temporary_password_email, send_password_reset_email
+from utils.email import send_approval_credentials_email, send_email, send_temporary_password_email, send_password_reset_email, send_continuing_student_credentials_email
 
 from utils.notifications import create_assignment_notification, create_fee_notification
 
@@ -1781,12 +1781,31 @@ def register_continuing_student():
 
             db.session.commit()
 
-
+            # Send credentials email to student
+            if email:
+                try:
+                    email_sent = send_continuing_student_credentials_email(
+                        email=email,
+                        first_name=first_name,
+                        last_name=last_name,
+                        username=username,
+                        student_id=user_id,
+                        index_number=index_number,
+                        temp_password=temp_password,
+                        programme=programme,
+                        level=programme_level
+                    )
+                    if email_sent:
+                        flash(f"📧 Credentials email sent to {email}", "info")
+                    else:
+                        flash("⚠️ Student registered but email failed to send. Please provide credentials manually.", "warning")
+                except Exception as e:
+                    logger.error(f"Failed to send continuing student email: {e}")
+                    flash("⚠️ Student registered but email failed to send. Please provide credentials manually.", "warning")
 
             flash(f"✅ Continuing student '{first_name} {last_name}' registered successfully! Student ID: {user_id} | Username: {username} | Index: {index_number}", "success")
 
             return redirect(url_for('admin.dashboard'))
-
 
 
         except IntegrityError:
