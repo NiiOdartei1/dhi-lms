@@ -85,6 +85,13 @@ def is_admin_or_teacher():
     return getattr(current_user, 'role', None) in ['admin', 'teacher']
 
 
+def is_superadmin_or_academic_admin():
+    """Check if user is superadmin or academic admin (backup control for teacher features)"""
+    if not isinstance(current_user, Admin):
+        return False
+    return current_user.is_superadmin or current_user.is_academic_admin
+
+
 
 
 
@@ -3161,7 +3168,13 @@ def view_students():
 
 @admin_bp.route('/quizzes')
 
+@login_required
+
 def manage_quizzes():
+
+    if not is_superadmin_or_academic_admin():
+
+        abort(403)
 
     quizzes = Quiz.query.order_by(Quiz.start_datetime.desc()).all()
 
@@ -3295,7 +3308,9 @@ def generate_quiz_backup_file(quiz_data, questions_data, backup_dir='quiz_backup
 
 def add_quiz():
 
-    admin_only()
+    if not is_superadmin_or_academic_admin():
+
+        abort(403)
 
 
 
@@ -3594,6 +3609,10 @@ def is_quiz_active(quiz):
 def edit_quiz(quiz_id):
 
     """Edit an existing quiz - tertiary education (programme/level based)"""
+
+    if not is_superadmin_or_academic_admin():
+
+        abort(403)
 
     quiz = Quiz.query.get_or_404(quiz_id)
 
@@ -3947,7 +3966,9 @@ def edit_quiz(quiz_id):
 
 def delete_quiz(quiz_id):
 
-    admin_only()
+    if not is_superadmin_or_academic_admin():
+
+        abort(403)
 
     quiz = Quiz.query.get_or_404(quiz_id)
 
@@ -4098,11 +4119,13 @@ Exam Timetable Management Routes for Admin
 
 @login_required
 
-@require_admin
-
 def admin_exam_timetable():
 
     """List and manage exam timetable entries."""
+
+    if not is_superadmin_or_academic_admin():
+
+        abort(403)
 
     
 
@@ -5912,7 +5935,7 @@ def download_backup(filename):
 
 def manage_assignments():
 
-    if not is_admin_or_teacher():
+    if not is_superadmin_or_academic_admin():
 
         abort(403)
 
@@ -5938,7 +5961,7 @@ def manage_assignments():
 
 def add_assignment():
 
-    if not is_admin_or_teacher():
+    if not is_superadmin_or_academic_admin():
 
         abort(403)
 
@@ -6044,7 +6067,7 @@ def is_admin_or_teacher():
 
 def edit_assignment(assignment_id):
 
-    if current_user.role != 'admin':
+    if not is_superadmin_or_academic_admin():
 
         abort(403)
 
@@ -6138,7 +6161,7 @@ def edit_assignment(assignment_id):
 
 def delete_assignment(assignment_id):
 
-    if not is_admin_or_teacher():
+    if not is_superadmin_or_academic_admin():
 
         abort(403)
 
