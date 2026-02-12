@@ -1033,7 +1033,7 @@ def result_vetting_list():
 @admin_bp.route('/past-releases')
 @login_required
 def past_releases():
-    if current_user.role not in ['superadmin', 'academic_admin']:
+    if not (current_user.is_academic_admin or current_user.is_superadmin):
         abort(403)
 
     # Ensure DB schema has fields we expect (for older dev DBs)
