@@ -54,7 +54,7 @@ def send_email(to_email, subject, body):
 
 def send_password_reset_email(applicant, token):
     reset_url = url_for(
-        'auth.reset_password',
+        'vclass.reset_password',
         token=token,
         _external=True
     )
@@ -268,7 +268,7 @@ Your login credentials are:
 
 Please log in immediately at the Teacher Portal and change your password to keep your account secure.
 
-Login URL: {url_for('teacher.login', _external=True)}
+Login URL: {url_for('teacher.teacher_login', _external=True)}
 
 Important:
 - Keep your credentials confidential
@@ -315,7 +315,7 @@ Your login credentials are:
 
 Please log in immediately at the Admin Portal and change your password to keep your account secure.
 
-Login URL: {url_for('admin.login', _external=True)}
+Login URL: {url_for('admin.admin_login', _external=True)}
 
 Important:
 - Keep your credentials confidential
@@ -354,7 +354,7 @@ Your login credentials are:
 
 Please log in immediately at the Student Portal and change your password to keep your account secure.
 
-Login URL: {url_for('vclass.login', _external=True)}
+Login URL: {url_for('vclass.vclass_login', _external=True)}
 
 Important:
 - Keep your credentials confidential
