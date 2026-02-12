@@ -76,7 +76,13 @@ def forgot_password():
         query = User.query.filter(db.func.lower(User.email) == email)
         if user_id:
             query = query.filter_by(user_id=user_id)
-        user = query.first()
+        
+        try:
+            user = query.first()
+        except Exception as e:
+            current_app.logger.error(f"Database error in forgot_password: {e}")
+            flash('A temporary error occurred. Please try again in a few moments.', 'warning')
+            return redirect(url_for('select_portal'))
 
         if not user:
             flash('If that account exists, a reset email will be sent.', 'info')

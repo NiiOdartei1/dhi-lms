@@ -14,10 +14,21 @@ class Config:
         SQLALCHEMY_DATABASE_URI = db_url.replace(
             "postgres://", "postgresql://"
         )
+        # Add SSL configuration for production databases
+        if "sslmode=" not in SQLALCHEMY_DATABASE_URI:
+            SQLALCHEMY_DATABASE_URI += "?sslmode=require"
     else:
         SQLALCHEMY_DATABASE_URI = "sqlite:///instance/lms.db"
 
     SQLALCHEMY_TRACK_MODIFICATIONS = False
+    
+    # Connection pool settings for production
+    SQLALCHEMY_ENGINE_OPTIONS = {
+        "pool_size": 10,
+        "pool_recycle": 300,
+        "pool_pre_ping": True,
+        "max_overflow": 20
+    }
 
     MAX_CONTENT_LENGTH = 16 * 1024 * 1024  # 16MB uploads
 
