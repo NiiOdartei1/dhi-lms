@@ -14,7 +14,7 @@ if sys.platform == "win32":
 import os
 import logging
 from datetime import datetime
-from flask import Flask, render_template, redirect, url_for, flash, request, abort, jsonify, send_from_directory, current_app
+from flask import Flask, render_template, redirect, url_for, flash, request, abort, jsonify, send_from_directory, current_app, g
 from werkzeug.utils import secure_filename
 
 # Load environment variables
@@ -54,6 +54,77 @@ IS_PRODUCTION = bool(
 )
 
 logger.info(f"🌍 Environment: {'PRODUCTION (Render)' if IS_PRODUCTION else 'LOCAL DEVELOPMENT'}")
+
+# ===== Memory Management =====
+import gc
+import psutil
+from threading import Thread
+import time
+
+def monitor_memory_usage():
+    """Monitor memory usage and perform cleanup to prevent worker timeouts"""
+    if not IS_PRODUCTION:
+        return  # Only run in production
+    
+    process = psutil.Process()
+    memory_limit_mb = app.config.get('MEMORY_LIMIT_MB', 512)
+    
+    def cleanup_task():
+        while True:
+            try:
+                memory_info = process.memory_info()
+                memory_mb = memory_info.rss / 1024 / 1024
+                
+                if memory_mb > memory_limit_mb * 0.8:  # 80% threshold
+                    logger.warning(f"🧹 High memory usage detected: {memory_mb:.1f}MB - Performing cleanup")
+                    
+                    # Force garbage collection
+                    gc.collect()
+                    
+                    # Close idle database connections
+                    try:
+                        db.engine.dispose()
+                        logger.info("🗄️ Database connections cleaned up")
+                    except Exception as e:
+                        logger.error(f"Error cleaning up database connections: {e}")
+                    
+                    memory_after = process.memory_info().rss / 1024 / 1024
+                    logger.info(f"✅ Memory after cleanup: {memory_after:.1f}MB")
+                
+                time.sleep(app.config.get('CLEANUP_INTERVAL', 300))  # 5 minutes
+                
+            except Exception as e:
+                logger.error(f"Error in memory monitoring: {e}")
+                time.sleep(60)  # Wait 1 minute before retrying
+    
+    # Start monitoring in background thread
+    monitor_thread = Thread(target=cleanup_task, daemon=True)
+    monitor_thread.start()
+    logger.info("🧠 Memory monitoring started")
+
+# Start memory monitoring if in production
+if IS_PRODUCTION:
+    try:
+        monitor_memory_usage()
+    except ImportError:
+        logger.warning("⚠️ psutil not available - memory monitoring disabled")
+    except Exception as e:
+        logger.error(f"❌ Failed to start memory monitoring: {e}")
+
+# ===== Request Timeout Middleware =====
+@app.before_request
+def before_request():
+    """Monitor request start time to prevent timeouts"""
+    g.start_time = time.time()
+
+@app.after_request  
+def after_request(response):
+    """Check request duration and log slow requests"""
+    if hasattr(g, 'start_time'):
+        duration = time.time() - g.start_time
+        if duration > 25:  # Log requests taking longer than 25 seconds
+            logger.warning(f"🐌 Slow request detected: {request.method} {request.path} took {duration:.2f}s")
+    return response
 
 # ===== Helper Function to Initialize Database =====
 def initialize_database():
