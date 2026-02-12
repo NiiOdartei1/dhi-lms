@@ -97,7 +97,7 @@ def is_superadmin_or_academic_admin():
 
 def ensure_release_columns():
 
-    """Ensure new columns exist on semester_result_release table (safe for SQLite)."""
+    """Ensure new columns exist on semester_result_release table (compatible with PostgreSQL)."""
 
     try:
 
@@ -105,9 +105,14 @@ def ensure_release_columns():
 
         conn = db.engine.connect()
 
-        res = conn.execute(text("PRAGMA table_info('semester_result_release')"))
+        # Use PostgreSQL syntax to get column information
+        res = conn.execute(text("""
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name = 'semester_result_release'
+        """))
 
-        cols = [r[1] for r in res.fetchall()]
+        cols = [r[0] for r in res.fetchall()]
 
         to_add = []
 
@@ -1017,7 +1022,7 @@ def get_admin_dashboard_url(admin):
 @admin_bp.route('/vetting/results')
 @login_required
 def result_vetting_list():
-    if current_user.role not in ['superadmin', 'academic_admin']:
+    if not (current_user.is_academic_admin or current_user.is_superadmin):
         abort(403)
 
     # Ensure DB schema has fields we expect (for older dev DBs)

@@ -70,8 +70,10 @@
         <label for="academicYearFilter" class="form-label">Academic Year</label>
         <select class="form-select" id="academicYearFilter">
           <option value="">All Years</option>
+          {% set years = [] %}
           {% for release in releases %}
-            {% if release.academic_year not in [option.text for option in academicYearFilter.options if option.value == release.academic_year|string] %}
+            {% if release.academic_year not in years %}
+              {% set _ = years.append(release.academic_year) %}
               <option value="{{ release.academic_year }}">{{ release.academic_year }}</option>
             {% endif %}
           {% endfor %}
