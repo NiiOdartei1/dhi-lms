@@ -2,7 +2,7 @@
 Flask extensions - instantiated here but configured in app factory
 """
 from flask_sqlalchemy import SQLAlchemy
-from flask_mailman import Mail
+from flask_mail import Mail
 from flask_socketio import SocketIO
 
 # Create bare instances (no config yet)
