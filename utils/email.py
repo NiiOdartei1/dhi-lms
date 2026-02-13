@@ -2,8 +2,7 @@ from flask import current_app, url_for
 import resend
 import logging
 
-# Initialize Resend client
-resend.api_key = current_app.config.get('RESEND_API_KEY', 're_a8DrgsUK_LCTo9FaBkR8J4XUvRauYS2gB')
+# Resend client will be initialized in app context
 
 
 def _get_sender():
@@ -36,6 +35,9 @@ def send_email(to_email, subject, body):
     Cloud-friendly and reliable.
     """
     try:
+        # Initialize Resend API key in app context
+        resend.api_key = current_app.config.get('RESEND_API_KEY', 're_a8DrgsUK_LCTo9FaBkR8J4XUvRauYS2gB')
+        
         params = {
             "from": _get_sender(),
             "to": [to_email],
