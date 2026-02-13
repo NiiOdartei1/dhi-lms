@@ -7,7 +7,6 @@ cryptography==42.0.0
 Flask==2.3.3
 Flask-Login==0.6.3
 Flask-Mail==0.10.0
-Flask-Mailman==1.1.1
 resend==0.8.0
 Flask-Migrate==4.1.0
 Flask-SQLAlchemy==3.1.1

@@ -230,14 +230,14 @@ def send_approval_credentials_email(applicant, username, student_id, temp_passwo
     """
 
     try:
-        message = EmailMessage(
-            subject=subject,
-            body=body,
-            from_email=_get_sender(),
-            to=[applicant.email]
-        )
-        message.content_subtype = "html"
-        message.send()
+        params = {
+            "from": _get_sender(),
+            "to": [applicant.email],
+            "subject": subject,
+            "html": body
+        }
+        
+        result = resend.Emails.send(params)
         logging.info(f"Approval credentials email sent successfully to {applicant.email}")
         return True
     except Exception as e:
