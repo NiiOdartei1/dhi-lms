@@ -1,5 +1,7 @@
 from flask import current_app, url_for
 import logging
+import smtplib
+import socket
 
 # Resend will be initialized when needed within app context
 resend = None
@@ -16,6 +18,42 @@ def _get_resend_client():
             logging.error("Resend package not installed")
             return None
     return resend
+
+def _send_via_gmail(to_email, subject, body):
+    """Fallback to Gmail SMTP for any email address"""
+    try:
+        # Set socket timeout to prevent hanging
+        socket.setdefaulttimeout(30)
+        
+        # Create SMTP connection
+        smtp_server = smtplib.SMTP('smtp.gmail.com', 587)
+        smtp_server.starttls()
+        
+        # Login with Gmail credentials
+        smtp_server.login(
+            current_app.config.get('MAIL_USERNAME'),
+            current_app.config.get('MAIL_PASSWORD')
+        )
+        
+        # Create email message
+        from_email = current_app.config.get('MAIL_USERNAME')
+        message = f"""From: {from_email}
+To: {to_email}
+Subject: {subject}
+Content-Type: text/html; charset="utf-8"
+
+{body.replace('\n', '<br>')}"""
+        
+        # Send email
+        smtp_server.sendmail(from_email, to_email, message.encode('utf-8'))
+        smtp_server.quit()
+        
+        logging.info(f"Email sent successfully via Gmail to {to_email}")
+        return True
+        
+    except Exception as e:
+        logging.error(f"Gmail sending failed to {to_email}: {str(e)}")
+        return False
 
 
 def _get_sender():
@@ -44,29 +82,29 @@ def _get_applicant_name(applicant):
 
 def send_email(to_email, subject, body):
     """
-    Core email sender using Resend API.
-    Cloud-friendly and reliable.
+    Hybrid email sender: Try Resend first, fallback to Gmail SMTP.
+    Works for all email addresses.
     """
+    # Try Resend first (faster, cloud-friendly)
     try:
         resend_client = _get_resend_client()
-        if resend_client is None:
-            logging.error("Resend client not available")
-            return False
+        if resend_client is not None:
+            params = {
+                "from": _get_sender(),
+                "to": [to_email],
+                "subject": subject,
+                "html": body.replace('\n', '<br>')
+            }
             
-        params = {
-            "from": _get_sender(),
-            "to": [to_email],
-            "subject": subject,
-            "html": body.replace('\n', '<br>')  # Convert to HTML
-        }
-        
-        result = resend_client.Emails.send(params)
-        logging.info(f"Email sent successfully to {to_email}")
-        return True
-
+            result = resend_client.Emails.send(params)
+            logging.info(f"Email sent successfully via Resend to {to_email}")
+            return True
     except Exception as e:
-        logging.error(f"Email sending failed to {to_email}: {str(e)}")
-        return False
+        logging.warning(f"Resend failed for {to_email}: {str(e)}")
+    
+    # Fallback to Gmail SMTP (works for all emails)
+    logging.info(f"Falling back to Gmail SMTP for {to_email}")
+    return _send_via_gmail(to_email, subject, body)
 
 
 # ------------------------------------------------------------------

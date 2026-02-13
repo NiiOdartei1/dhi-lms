@@ -67,19 +67,19 @@ class Config:
     )
 
     # ------------------------------------------------------
-    # EMAIL (Flask-Mailman – GMAIL)
+    # EMAIL CONFIGURATION (HYBRID: Resend + Gmail Fallback)
     # ------------------------------------------------------
+    RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "re_a8DrgsUK_LCTo9FaBkR8J4XUvRauYS2gB")
+    
+    # Gmail SMTP configuration (fallback)
     MAIL_SERVER = "smtp.gmail.com"
     MAIL_PORT = 587
     MAIL_USE_TLS = True
     MAIL_USE_SSL = False
-
-    # ------------------------------------------------------
-    # EMAIL CONFIGURATION (RESEND API)
-    # ------------------------------------------------------
-    RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "re_a8DrgsUK_LCTo9FaBkR8J4XUvRauYS2gB")
+    MAIL_USERNAME = os.environ.get("MAIL_USERNAME", "lampteyjoseph860@gmail.com")
+    MAIL_PASSWORD = os.environ.get("MAIL_PASSWORD", "injjjivjdnlqtlum")
     
-    # Use Resend default domain for immediate sending
+    # Use Resend default domain for primary sending
     MAIL_DEFAULT_SENDER = "onboarding@resend.dev"
 
     # ------------------------------------------------------
