@@ -359,10 +359,11 @@ Please keep this information safe. You will need it to access the application fo
 Best regards,
 Admissions Office
 """
-            email_sent = send_email(to_email=email, subject="Your Admission Voucher Details", body=body)
-
-            if not email_sent:
-                flash(f"Voucher assigned, but failed to send email to {email}.", "warning")
+            try:
+                email_sent = send_email(to_email=email, subject="Your Admission Voucher Details", body=body)
+            except Exception as e:
+                current_app.logger.error(f"Email sending failed: {e}")
+                email_sent = False
             else:
                 flash(f"Payment successful! Your voucher PIN and Serial Number have been sent to {email}.", "success")
 
