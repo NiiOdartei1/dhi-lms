@@ -108,6 +108,12 @@ if IS_PRODUCTION:
         # Temporarily disabled to test if monitoring is causing timeouts
         logger.info("🔧 Memory monitoring temporarily disabled for testing")
         # monitor_memory_usage()
+        
+        # Add memory leak detection
+        import tracemalloc
+        tracemalloc.start()
+        logger.info("🔍 Memory leak detection started")
+        
     except ImportError:
         logger.warning("⚠️ psutil not available - memory monitoring disabled")
     except Exception as e:
@@ -116,16 +122,57 @@ if IS_PRODUCTION:
 # ===== Request Timeout Middleware =====
 @app.before_request
 def before_request():
-    """Monitor request start time to prevent timeouts"""
+    """Monitor request start time and memory usage to prevent timeouts"""
     g.start_time = time.time()
+    
+    # Log memory usage at start of each request
+    try:
+        import psutil
+        process = psutil.Process()
+        memory_mb = process.memory_info().rss / 1024 / 1024
+        logger.info(f"🔍 Request start: {request.method} {request.path} - Memory: {memory_mb:.1f}MB")
+    except ImportError:
+        pass
 
 @app.after_request  
 def after_request(response):
     """Check request duration and log slow requests"""
     if hasattr(g, 'start_time'):
         duration = time.time() - g.start_time
-        if duration > 25:  # Log requests taking longer than 25 seconds
+        if duration > 10:  # Log requests taking longer than 10 seconds
             logger.warning(f"🐌 Slow request detected: {request.method} {request.path} took {duration:.2f}s")
+        
+        # Log memory usage at end of request
+        try:
+            import psutil
+            import tracemalloc
+            process = psutil.Process()
+            memory_mb = process.memory_info().rss / 1024 / 1024
+            
+            # Get memory snapshot if tracemalloc is running
+            snapshot_info = ""
+            if tracemalloc.is_tracing():
+                current, peak = tracemalloc.get_traced_memory()
+                snapshot_info = f" - Traced: {current/1024/1024:.1f}MB / {peak/1024/1024:.1f}MB"
+            
+            logger.info(f"✅ Request end: {request.method} {request.path} - Duration: {duration:.2f}s - Memory: {memory_mb:.1f}MB{snapshot_info}")
+            
+            # Log memory snapshots every 10 requests
+            if not hasattr(app, '_request_counter'):
+                app._request_counter = 0
+            app._request_counter += 1
+            
+            if app._request_counter % 10 == 0:
+                if tracemalloc.is_tracing():
+                    snapshot = tracemalloc.take_snapshot()
+                    top_stats = snapshot.statistics('lineno')[:5]
+                    logger.warning(f"🔍 Top 5 memory allocations after {app._request_counter} requests:")
+                    for i, stat in enumerate(top_stats, 1):
+                        logger.warning(f"  {i}. {stat}")
+                        
+        except ImportError:
+            pass
+    
     return response
 
 # ===== Helper Function to Initialize Database =====
