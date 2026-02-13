@@ -8038,715 +8038,372 @@ def approve_payment(txn_id):
                         db.session.flush()  # might raise IntegrityError if another process created the same row
 
                     except IntegrityError:
-
                         db.session.rollback()
-
                         # re-query the existing balance (concurrent insert raced us)
-
                         balance = StudentFeeBalance.query.filter_by(
-
                             student_id=student_user_id,
-
                             fee_structure_id=fee_structure.id
 
                         ).first()
-
                         if not balance:
 
                             # Very odd — re-raise after logging
-
                             logging.exception("Failed to create StudentFeeBalance and couldn't find existing one.")
-
                             flash("System error creating student balance; contact admin.", "danger")
-
                             return redirect(url_for('admin.review_payments'))
 
             else:
-
                 # No fee structure and no existing balance found.
-
                 # We will not create a new (unlinked) balance because fee_structure_id is required.
-
                 logging.warning("No fee structure found for student %s %s %s; skipping balance creation.",
-
                                 student_user_id, txn.academic_year, txn.semester)
-
                 flash("Payment approved but no matching fee structure found; balance not created.", "warning")
 
-
-
         # At this point, if we have a balance, update it with txn.amount
-
         if balance:
-
             if balance.amount_paid is None:
-
                 balance.amount_paid = 0.0
-
             balance.amount_paid = (balance.amount_paid or 0.0) + (txn.amount or 0.0)
 
-
-
             # If fully paid, mark is_paid and set paid_on if column exists
-
             try:
-
                 if (balance.amount_due or 0.0) > 0 and (balance.amount_paid or 0.0) >= (balance.amount_due or 0.0):
-
                     balance.is_paid = True
-
                     if hasattr(balance, 'paid_on'):
-
                         balance.paid_on = datetime.utcnow()
-
             except Exception:
-
                 # ignore model differences
-
                 pass
 
-
-
         # Optionally: generate receipt (wrapped so errors won't block)
-
         try:
-
             receipt_filename = generate_receipt(txn, student)
-
             if receipt_filename and hasattr(txn, 'receipt_filename'):
-
                 txn.receipt_filename = receipt_filename
-
         except Exception:
-
             logging.exception("Receipt generation failed; continuing.")
-
-
-
         db.session.commit()
-
         flash("Payment approved, balance updated, and receipt generated.", "success")
 
-
-
     except IntegrityError as ie:
-
         db.session.rollback()
-
         logging.exception("IntegrityError while approving payment")
-
         # Try to recover: find existing balance and update
-
         try:
-
             student_user_id = getattr(student, 'user_id', None) or str(getattr(student, 'id', None))
-
             if fee_structure:
-
                 balance = StudentFeeBalance.query.filter_by(
-
                     student_id=student_user_id,
-
                     fee_structure_id=fee_structure.id
-
                 ).first()
-
             else:
-
                 balance = StudentFeeBalance.query.filter_by(
-
                     student_id=student_user_id,
-
                     academic_year=txn.academic_year,
-
                     semester=txn.semester
-
                 ).first()
-
-
 
             if balance:
-
                 if balance.amount_paid is None:
-
                     balance.amount_paid = 0.0
-
                 balance.amount_paid = (balance.amount_paid or 0.0) + (txn.amount or 0.0)
-
                 if (balance.amount_due or 0.0) > 0 and (balance.amount_paid or 0.0) >= (balance.amount_due or 0.0):
-
                     balance.is_paid = True
-
                     if hasattr(balance, 'paid_on'):
-
                         balance.paid_on = datetime.utcnow()
-
                 # attach receipt if possible
-
                 try:
-
                     receipt_filename = generate_receipt(txn, student)
-
                     if receipt_filename and hasattr(txn, 'receipt_filename'):
-
                         txn.receipt_filename = receipt_filename
-
                 except Exception:
-
                     logging.exception("Receipt generation failed in recovery.")
-
                 db.session.commit()
-
                 flash("Payment approved (recovered from race) and balance updated.", "success")
-
             else:
-
                 flash("Payment approved but failed to create/update balance due to a concurrency error. Contact admin.", "warning")
-
         except Exception:
-
             db.session.rollback()
-
             logging.exception("Recovery after IntegrityError failed")
-
             flash("System error while approving payment (post-recovery).", "danger")
 
-
-
     except Exception as e:
-
         db.session.rollback()
-
         logging.exception("Approval process failed")
-
         flash(f"System error while approving payment: {e}", "danger")
 
-
-
     return redirect(url_for('admin.review_payments'))
-
-
-
 
 
 @admin_bp.route('/reject-payment/<int:txn_id>', methods=['POST'])
-
 @login_required
-
 def reject_payment(txn_id):
-
     """Reject a pending fee payment, remove associated StudentFeeBalance, and delete transaction."""
-
     txn = StudentFeeTransaction.query.get_or_404(txn_id)
 
-
-
     if getattr(txn, 'is_approved', False):
-
         flash("Cannot reject — transaction already approved.", "warning")
-
         return redirect(url_for('admin.review_payments'))
 
-
-
     try:
-
         # Get the student's string ID (like 'STD001') from the student relationship
-
         student_str_id = txn.student.user_id
 
-
-
         # Delete associated fee balances for this student, year, and semester
-
         balances = StudentFeeBalance.query.filter_by(
-
             student_id=student_str_id,
-
             academic_year=txn.academic_year,
-
             semester=txn.semester
-
         ).all()
 
-
-
         for balance in balances:
-
             db.session.delete(balance)
 
-
-
         # Delete the transaction itself
-
         db.session.delete(txn)
-
-
 
         db.session.commit()
 
-
-
         flash("Payment rejected, associated balances removed, and transaction deleted.", "info")
 
-
-
     except Exception as e:
-
         db.session.rollback()
-
         logging.exception("Reject process failed")
-
         flash(f"System error while rejecting payment: {e}", "danger")
-
-
 
     return redirect(url_for('admin.review_payments'))
 
 
-
-
-
 @admin_bp.route('/password-reset-requests')
-
 @login_required
-
 def password_reset_requests_view():
-
     # Expire old requests
-
     now = datetime.utcnow()
 
     expired_requests = PasswordResetRequest.query.join(PasswordResetToken).filter(
-
         PasswordResetRequest.status.in_(['emailed', 'email_failed']),
-
         PasswordResetToken.expires_at < now
-
     ).all()
-
     for req in expired_requests:
-
         req.status = 'expired'
-
     if expired_requests:
-
         db.session.commit()
 
-
-
     requests = PasswordResetRequest.query.order_by(PasswordResetRequest.requested_at.desc()).all()
-
     return render_template('admin/password_reset_requests.html', requests=requests)
 
 
-
 def retry_failed_emails():
-
     failed_requests = PasswordResetRequest.query.filter_by(status='email_failed').all()
-
     for req in failed_requests:
-
         token = req.tokens[-1].token_hash  # last token
-
         try:
-
             send_password_reset_email(req.user, token)
-
             req.status = 'emailed'
-
             req.email_sent_at = datetime.utcnow()
-
         except Exception:
-
             continue
-
     db.session.commit()
-
 
 
 @admin_bp.route('/password-reset/<int:request_id>', methods=['POST'])
-
 @login_required
-
 def reset_user_password(request_id):
-
     req = PasswordResetRequest.query.get_or_404(request_id)
-
     user = User.query.filter_by(user_id=req.user_id).first()
 
     if not user:
-
         flash('User not found.', 'danger')
-
         req.status = 'failed'
-
         db.session.commit()
-
         return redirect(url_for('admin.password_reset_requests_view'))
 
-
-
     temp_password = secrets.token_urlsafe(8)
-
     user.set_password(temp_password)
-
     db.session.commit()
-
-
 
     req.status = 'completed'
-
     req.completed_at = datetime.utcnow()
-
     db.session.commit()
 
-
-
     try:
-
         send_temporary_password_email(user, temp_password)
-
         flash(f'Password for {user.user_id} has been reset and emailed.', 'success')
-
     except Exception as e:
-
         current_app.logger.exception(f"Failed to send email: {e}")
-
         flash(f'Password reset succeeded, but email failed for {user.user_id}.', 'warning')
-
-
 
     return redirect(url_for('admin.password_reset_requests_view'))
 
 
-
 @admin_bp.route('/teacher-assessment')
-
 @login_required
-
 def teacher_assessment_admin_home():
-
     if not current_user.is_admin:
-
         abort(403)
-
-
 
     active_period = TeacherAssessmentPeriod.query.filter_by(is_active=True).first()
 
-
-
     return render_template(
-
         'admin/teacher_assessment_home.html',
 
         active_period=active_period
-
     )
-
-
 
 @admin_bp.route('/teacher-assessment/questions')
-
 @login_required
-
 def teacher_assessment_questions():
-
     if not current_user.is_admin:
-
         abort(403)
-
-
 
     questions = TeacherAssessmentQuestion.query.order_by(
-
         TeacherAssessmentQuestion.category,
-
         TeacherAssessmentQuestion.id
-
     ).all()
 
-
-
     return render_template(
-
         'admin/teacher_assessment_questions.html',
-
         questions=questions
-
     )
 
-
-
 @admin_bp.route('/teacher-assessment/questions/add', methods=['GET', 'POST'])
-
 @login_required
-
 def add_teacher_assessment_question():
-
     if not current_user.is_admin:
-
         abort(403)
 
-
-
     if request.method == 'POST':
-
         question = request.form.get('question')
-
         category = request.form.get('category')
 
-
-
         if not question or not category:
-
             flash("All fields are required.", "danger")
-
             return redirect(request.url)
 
-
-
         q = TeacherAssessmentQuestion(
-
             question=question,
-
             category=category
-
         )
-
         db.session.add(q)
-
         db.session.commit()
 
-
-
         flash("Question added successfully.", "success")
-
         return redirect(url_for('admin.teacher_assessment_questions'))
-
-
 
     return render_template('admin/teacher_assessment_question_form.html')
 
 
-
 @admin_bp.route('/teacher-assessment/questions/<int:qid>/edit', methods=['GET', 'POST'])
-
 @login_required
-
 def edit_teacher_assessment_question(qid):
-
     if not current_user.is_admin:
-
         abort(403)
-
-
 
     q = TeacherAssessmentQuestion.query.get_or_404(qid)
 
-
-
     if request.method == 'POST':
-
         q.question = request.form.get('question')
-
         q.category = request.form.get('category')
-
         q.is_active = bool(request.form.get('is_active'))
 
-
-
         db.session.commit()
-
         flash("Question updated.", "success")
-
         return redirect(url_for('admin.teacher_assessment_questions'))
 
-
-
     return render_template(
-
         'admin/teacher_assessment/question_form.html',
-
         q=q
-
     )
 
 
-
 @admin_bp.route('/teacher-assessment/questions/<int:qid>/delete', methods=['POST'])
-
 @login_required
-
 def delete_teacher_assessment_question(qid):
-
     if not current_user.is_admin:
-
         abort(403)
-
-
 
     q = TeacherAssessmentQuestion.query.get_or_404(qid)
 
     db.session.delete(q)
-
     db.session.commit()
 
-
-
     flash("Question deleted.", "success")
-
     return redirect(url_for('admin.teacher_assessment_questions'))
 
 
-
 @admin_bp.route('/teacher-assessment/periods')
-
 @login_required
-
 def assessment_periods():
-
     if not current_user.is_admin:
-
         abort(403)
 
-
-
     periods = TeacherAssessmentPeriod.query.order_by(
-
         TeacherAssessmentPeriod.created_at.desc()
-
     ).all()
 
-
-
     return render_template(
-
         'admin/teacher_assessment_periods.html',
-
         periods=periods
-
     )
 
 
-
 @admin_bp.route('/teacher-assessment/periods/add', methods=['GET', 'POST'])
-
 @login_required
-
 def add_assessment_period():
-
     if not current_user.is_admin:
-
         abort(403)
 
-
-
     if request.method == 'POST':
-
         academic_year = request.form.get('academic_year')
-
         semester = request.form.get('semester')
-
         start_date = datetime.strptime(request.form.get('start_date'), "%Y-%m-%d").date()
-
         end_date = datetime.strptime(request.form.get('end_date'), "%Y-%m-%d").date()
-
         activate = request.form.get('activate')
 
-
-
         if not all([academic_year, semester, start_date, end_date]):
-
             flash("All fields are required.", "danger")
-
             return redirect(request.url)
 
-
-
         if activate:
-
             # Deactivate all other periods
-
             TeacherAssessmentPeriod.query.update({TeacherAssessmentPeriod.is_active: False})
 
-
-
         period = TeacherAssessmentPeriod(
-
             academic_year=academic_year,
-
             semester=semester,
-
             start_date=start_date,
-
             end_date=end_date,
-
             is_active=bool(activate)
-
         )
 
-
-
         db.session.add(period)
-
         db.session.commit()
 
-
-
         flash("Assessment period created successfully.", "success")
-
         return redirect(url_for('admin.assessment_periods'))
-
-
 
     return render_template('admin/teacher_assessment_period_form.html')
 
 
-
 @admin_bp.route('/teacher-assessment/periods/<int:pid>/toggle', methods=['POST'])
-
 @login_required
-
 def toggle_assessment_period(pid):
-
     if not current_user.is_admin:
-
         abort(403)
-
-
 
     period = TeacherAssessmentPeriod.query.get_or_404(pid)
 
-
-
     if not period.is_active:
-
         # Ensure only one active period
-
         TeacherAssessmentPeriod.query.update({TeacherAssessmentPeriod.is_active: False})
-
         period.is_active = True
-
         flash("Assessment period activated.", "success")
-
     else:
-
         period.is_active = False
-
         flash("Assessment period closed.", "warning")
 
-
-
     db.session.commit()
-
     return redirect(url_for('admin.assessment_periods'))
-
-
-
-
-
 
 
 # =====================================================
@@ -8756,716 +8413,361 @@ def toggle_assessment_period(pid):
 # =====================================================
 
 @admin_bp.route('/admissions')
-
 @login_required
-
 @require_admissions_admin
-
 def manage_admissions():
-
     status = request.args.get('status')
 
-
-
     query = Application.query
-
     if status:
-
         query = query.filter_by(status=status)
-
-
 
     applications = query.order_by(Application.submitted_at.desc()).all()
 
-
-
     stats = {
-
         'total': Application.query.count(),
-
         'submitted': Application.query.filter_by(status='submitted').count(),
-
         'approved': Application.query.filter_by(status='approved').count(),
-
         'rejected': Application.query.filter_by(status='rejected').count()
-
     }
 
-
-
     return render_template(
-
         'admin/manage_admissions.html',
-
         applications=applications,
-
         status=status,
-
         stats=stats
-
     )
-
 
 
 @admin_bp.route('/admissions/<int:app_id>')
-
 @login_required
-
 @require_admissions_admin
-
 def view_application(app_id):
-
     application = Application.query.get_or_404(app_id)
 
-
-
     return render_template(
-
         'admin/view_application.html',
-
         application=application,
-
         documents=application.documents,
-
         results=application.exam_results
-
     )
 
 
-
 @admin_bp.route('/admissions/<int:app_id>/update-status/<string:new_status>', methods=['POST'])
-
 @login_required
-
 @require_admissions_admin
-
 def update_application_status(app_id, new_status):
-
     """Update application status and handle approval/rejection (tertiary version)"""
-
     application = Application.query.get_or_404(app_id)
 
-
-
     if new_status not in ['draft', 'submitted', 'approved', 'rejected']:
-
         flash('Invalid status.', 'danger')
-
         return redirect(url_for('admin.manage_admissions'))
-
-
 
     application.status = new_status
 
-
-
     try:
-
         # ================= APPROVED =================
-
         if new_status == 'approved':
-
             applicant_email = application.email or (
-
                 application.applicant.email if getattr(application, 'applicant', None) else None
-
             )
-
-
 
             if not applicant_email:
-
                 flash("Applicant email missing.", "danger")
-
                 return redirect(url_for('admin.manage_admissions'))
-
-
 
             existing_user = User.query.filter_by(email=applicant_email).first()
-
             if existing_user:
-
                 flash("Student account already exists for this applicant.", "info")
-
                 db.session.commit()
-
                 return redirect(url_for('admin.manage_admissions'))
 
-
-
             # -------- CREATE STUDENT ACCOUNT (TERTIARY) --------
-
             # Generate username: first name + middle initials + last name
-
             middle_initials = ''.join([word[0] for word in (application.other_names or '').split()])
 
-            
-
             username = generate_unique_username(
-
                 application.first_name or '',
-
                 middle_initials,
-
                 application.surname or '',
-
                 'student'
-
             )
 
-
-
             prefix = 'STD'
-
             count = User.query.filter_by(role='student').count() + 1
-
             while User.query.filter_by(user_id=f"{prefix}{count:03d}").first():
-
                 count += 1
-
             student_id = f"{prefix}{count:03d}"
-
-
 
             temp_password = uuid.uuid4().hex[:8]
 
-
-
             photo_doc = next((doc for doc in application.documents if doc.document_type.lower() == 'photo'), None)
 
-
-
             # Use uploaded photo filename if exists, else default filename
-
             # Store only the filename (templates expect just the filename)
-
             if photo_doc:
-
                 profile_picture_filename = os.path.basename(photo_doc.file_path)
-
             else:
-
                 profile_picture_filename = 'default_avatar.png'
-
             profile_picture_path = profile_picture_filename
 
-
-
             new_user = User(
-
                 user_id=student_id,
-
                 username=username,
-
                 email=applicant_email,
-
                 first_name=application.first_name,
-
                 middle_name=application.other_names,
-
                 last_name=application.surname,
-
                 role='student',
-
                 profile_picture=profile_picture_path
-
             )
-
-
 
             new_user.set_password(temp_password)
-
             db.session.add(new_user)
-
             db.session.flush()
-
-
 
             # -------- CREATE STUDENT PROFILE (TERTIARY) --------
-
             # Map application's first_choice to tertiary programme
-
             # Generate proper index number
-
             generated_index = generate_index_number(
-
                 programme_name=application.admitted_programme or application.first_choice,
-
                 admission_date=datetime.utcnow().date()
-
             )
-
-
 
             student_profile = StudentProfile(
-
                 user_id=new_user.user_id,
-
                 dob=application.dob,
-
                 gender=application.gender,
-
                 nationality=application.nationality,
-
                 address=application.postal_address,
-
                 phone=application.phone,
-
                 email=applicant_email,
 
-
-
                 guardian_name=application.guardian_name,
-
                 guardian_relation=application.guardian_relation,
-
                 guardian_phone=application.guardian_phone,
-
                 guardian_email=application.guardian_email,
-
                 guardian_address=application.guardian_address,
 
-
-
                 current_programme=application.admitted_programme or application.first_choice,
-
                 programme_level=100,
-
                 study_format=application.admitted_stream or 'Regular',
 
-
-
                 # ✅ NEW SYSTEM
-
                 index_number=generated_index,
 
-
-
                 academic_status='Active',
-
                 admission_date=datetime.utcnow().date(),
-
                 academic_year=application.admitted_academic_year or f"{datetime.utcnow().year}/{datetime.utcnow().year + 1}",
-
                 semester=application.admitted_semester or '1'
-
             )
-
-
 
             db.session.add(student_profile)
-
             db.session.flush()
 
-
-
             # ========== ✅ AUTO ASSIGN FEES (TERTIARY) ==========
-
             fees_assigned = assign_fees_to_student_tertiary(new_user, student_profile)
 
-
-
             db.session.commit()
-
-
 
             flash(f"Student account created! Username: {username}", "success")
-
             flash(f"✓ Index Number: {student_profile.index_number}", "info")
 
-
-
             if fees_assigned:
-
                 flash("✓ Fees automatically assigned to student.", "info")
-
             else:
-
                 flash("⚠ Student created but NO matching fee structure found.", "warning")
 
-
-
             # Prepare fees information for email
-
             fees_info = None
-
             programme_name = application.admitted_programme or application.first_choice
-
             fee_structures = ProgrammeFeeStructure.query.filter_by(
-
                 programme_name=programme_name,
-
                 programme_level='100',
-
                 study_format=application.admitted_stream or 'Regular'
-
             ).all()
-
             
-
             if fee_structures:
-
                 fees_list = []
-
                 for fee_structure in fee_structures:
-
                     # Use items_list property to get JSON-stored fee components
-
                     items = fee_structure.items_list if hasattr(fee_structure, 'items_list') else []
-
                     if items:
-
                         # If items exist, use them (they contain the actual fee details)
-
                         for item in items:
-
                             fees_list.append({
-
                                 'description': item.get('name', item.get('description', 'Fee')),
-
                                 'amount': item.get('amount', 0)
-
                             })
-
                     else:
-
                         # Fallback to description and amount if no items
-
                         if fee_structure.description != 'Default':
-
                             fees_list.append({
-
                                 'description': fee_structure.description,
-
                                 'amount': fee_structure.amount
-
                             })
-
-                
 
                 if fees_list:
-
                     fees_info = {
-
                         'programme_name': programme_name,
-
                         'fees': fees_list
-
                     }
 
-
-
             # Send credentials with fees info
-
             send_approval_credentials_email(application, username, student_id, temp_password, fees_info)
 
-
-
         # ================= REJECTED =================
-
         elif new_status == 'rejected':
-
             applicant_email = application.email or (
-
                 application.applicant.email if getattr(application, 'applicant', None) else None
-
             )
 
-
-
             if applicant_email:
-
                 user = User.query.filter_by(email=applicant_email, role='student').first()
-
                 if user:
-
                     # Also delete associated fees
-
                     StudentFeeBalance.query.filter_by(student_id=user.user_id).delete()
-
                     profile = StudentProfile.query.filter_by(user_id=user.user_id).first()
-
                     if profile:
-
                         db.session.delete(profile)
-
                     db.session.delete(user)
 
-
-
             db.session.commit()
-
             flash("Application rejected and student account removed.", "info")
 
-
-
         else:
-
             db.session.commit()
-
             flash(f'Application status updated to {new_status}.', 'success')
-
-        
-
         return redirect(url_for('admin.manage_admissions'))
 
-
-
     except Exception as e:
-
         db.session.rollback()
-
         logging.exception("Approval process failed")
-
         flash(f"System error: {e}", "danger")
-
-
 
     return redirect(url_for('admin.manage_admissions'))
 
 
-
-
-
 def assign_fees_to_student_tertiary(user, student_profile):
-
     """
-
     Assign fees to a newly admitted tertiary student.
-
     Matches by programme_name + programme_level (100).
-
     """
-
     # Find fee structure for this programme at Level 100
-
     fee_structures = ProgrammeFeeStructure.query.filter_by(
-
         programme_name=student_profile.current_programme,
-
         programme_level=str(student_profile.programme_level),  # ✅ use programme_level
-
         study_format=student_profile.study_format
-
     ).all()
 
-
-
     if not fee_structures:
-
         return False
 
-
-
     # Create StudentFeeBalance for each fee structure
-
     for fee_struct in fee_structures:
-
         balance = StudentFeeBalance(
-
             student_id=user.user_id,
-
             fee_structure_id=fee_struct.id,
-
             programme_name=student_profile.current_programme,
-
             programme_level=str(student_profile.programme_level),  # ✅ correct
-
             academic_year=student_profile.academic_year,
-
             semester=student_profile.semester,
-
             amount_due=fee_struct.amount,
-
             amount_paid=0.0,
-
             is_paid=False
-
         )
-
-
 
         db.session.add(balance)
 
-
-
     db.session.commit()
-
     return len(fee_structures) > 0
 
 
-
 def generate_admission_letter(application, student_user):
-
     from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
-
     from reportlab.lib.styles import getSampleStyleSheet
-
     from reportlab.lib.pagesizes import A4
-
     import os
 
-
-
     folder = os.path.join("static/admission_letters")
-
     os.makedirs(folder, exist_ok=True)
 
-
-
     filename = f"admission_{student_user.user_id}.pdf"
-
     filepath = os.path.join(folder, filename)
 
-
-
     styles = getSampleStyleSheet()
-
     doc = SimpleDocTemplate(filepath, pagesize=A4)
 
-
-
     story = []
-
     story.append(Paragraph("OFFICIAL ADMISSION LETTER", styles['Title']))
-
     story.append(Spacer(1, 20))
-
-
 
     story.append(Paragraph(f"Student Name: {application.other_names} {application.surname}", styles['Normal']))
-
     story.append(Paragraph(f"Student ID: {student_user.user_id}", styles['Normal']))
-
     story.append(Paragraph(f"Programme Offered: {application.admitted_programme}", styles['Normal']))
-
     story.append(Paragraph(f"Academic Year: {application.admitted_academic_year}", styles['Normal']))
-
     story.append(Spacer(1, 20))
 
-
-
     story.append(Paragraph(
-
         "Congratulations! You have been offered admission to this institution. "
-
         "Proceed to accept the offer and pay required school fees.",
-
         styles['Normal']
-
     ))
-
-
 
     doc.build(story)
 
-
-
     application.admission_letter_generated = True
-
     db.session.commit()
 
 
-
-
-
 @admin_bp.route('/vouchers', methods=['GET', 'POST'])
-
 def manage_vouchers():
-
     if request.method == 'POST':
-
         try:
-
             count = int(request.form.get('count', 1))
-
         except ValueError:
-
             count = 1
 
-
-
         amount_raw = request.form.get('amount', None)
-
         if amount_raw:
-
             try:
-
                 amount = float(amount_raw)
-
             except ValueError:
-
                 amount = float(current_app.config.get('VOUCHER_DEFAULT_AMOUNT', 50.0))
-
         else:
-
             amount = float(current_app.config.get('VOUCHER_DEFAULT_AMOUNT', 50.0))
 
-
-
         vouchers = []
-
         for _ in range(max(1, count)):
-
             pin = f"{random.randint(100000, 999999)}"
-
             serial = f"{random.randint(10000000, 99999999)}"
-
             v = AdmissionVoucher(pin=pin, serial=serial, amount=amount)
-
             db.session.add(v)
-
             vouchers.append(v)
 
-
-
         db.session.commit()
-
         flash(f'Generated {len(vouchers)} voucher(s).', 'success')
-
         return redirect(url_for('admin.manage_vouchers'))
 
-
-
     # Fetch all vouchers with related applicant info
-
     vouchers = AdmissionVoucher.query.order_by(AdmissionVoucher.created_at.desc()).all()
-
     return render_template('admin/vouchers.html', vouchers=vouchers)
 
 
-
 @admin_bp.route('/vouchers/create', methods=['GET', 'POST'])
-
 def create_voucher():
-
     if request.method == 'POST':
-
         # handle form submission here
-
         pass
-
     return render_template('admin/create_voucher.html')
 
 
-
-
-
 @admin_bp.route('/logout')
-
 @login_required
-
 def logout():
-
     """Admin logout route"""
-
     from flask_login import logout_user
-
     logout_user()
-
     flash('You have been logged out successfully.', 'success')
-
     return redirect(url_for('select_portal'))
-
-
-

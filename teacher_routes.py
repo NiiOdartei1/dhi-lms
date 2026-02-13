@@ -3,7 +3,7 @@ import json
 import re
 import tempfile
 from zipfile import ZipFile
-from flask import Blueprint, render_template, abort, flash, redirect, url_for, request, jsonify, current_app, send_from_directory
+from flask import Blueprint, render_template, abort, flash, redirect, url_for, request, jsonify, current_app
 from flask_login import login_required, current_user, login_user
 import requests
 from wtforms import SelectField
@@ -481,23 +481,6 @@ def delete_material(material_id):
     db.session.commit()
     flash('Material deleted.', 'info')
     return redirect(url_for('teacher.manage_materials'))
-
-@teacher_bp.route('/materials/download/<path:filename>')
-@login_required
-def download_material(filename):
-    """Download course material for teachers"""
-    if current_user.role != 'teacher':
-        abort(403)
-    
-    try:
-        return send_from_directory(
-            current_app.config['MATERIALS_FOLDER'],
-            filename,
-            as_attachment=True
-        )
-    except FileNotFoundError:
-        flash('Material not found.', 'danger')
-        return redirect(url_for('teacher.manage_materials'))
 
 @teacher_bp.route('/manage-assignments')
 @login_required
@@ -1666,7 +1649,7 @@ def manage_slots():
     now = datetime.now()
     expired_slots = AppointmentSlot.query.filter(
         AppointmentSlot.teacher_id == teacher.id,
-        (AppointmentSlot.date + AppointmentSlot.end_time) < now,
+        db.func.datetime(AppointmentSlot.date, AppointmentSlot.end_time) < now,
         AppointmentSlot.is_booked == False  # Optional: only delete unbooked
     ).all()
 
@@ -2242,7 +2225,7 @@ def add_meeting():
         meeting = Meeting(
             title=form.title.data,
             description=form.description.data,
-            host_id=current_user.id,
+            host_id=current_user.user_id,
             course_id=form.course_id.data,
             meeting_code=zoom_meeting["id"],
             scheduled_start=form.scheduled_start.data,

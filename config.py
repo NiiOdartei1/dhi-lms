@@ -74,13 +74,13 @@ class Config:
     MAIL_USE_TLS = True
     MAIL_USE_SSL = False
 
-    MAIL_USERNAME = os.environ.get("MAIL_USERNAME")
-    MAIL_PASSWORD = os.environ.get("MAIL_PASSWORD")  # App password only
-
-    MAIL_DEFAULT_SENDER = (
-        "Admissions Office",
-        MAIL_USERNAME
-    )
+    # ------------------------------------------------------
+    # EMAIL CONFIGURATION (RESEND API)
+    # ------------------------------------------------------
+    RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "re_a8DrgsUK_LCTo9FaBkR8J4XUvRauYS2gB")
+    
+    # Use Resend default domain for immediate sending
+    MAIL_DEFAULT_SENDER = "onboarding@resend.dev"
 
     # ------------------------------------------------------
     # ZOOM (OPTIONAL)

@@ -1,6 +1,9 @@
 from flask import current_app, url_for
-from flask_mailman import EmailMessage
+import resend
 import logging
+
+# Initialize Resend client
+resend.api_key = current_app.config.get('RESEND_API_KEY', 're_a8DrgsUK_LCTo9FaBkR8J4XUvRauYS2gB')
 
 
 def _get_sender():
@@ -9,7 +12,7 @@ def _get_sender():
     """
     return current_app.config.get(
         'MAIL_DEFAULT_SENDER',
-        'Admissions Office <no-reply@example.com>'
+        'onboarding@resend.dev'  # Use Resend default domain
     )
 
 
@@ -29,17 +32,18 @@ def _get_applicant_name(applicant):
 
 def send_email(to_email, subject, body):
     """
-    Core email sender using Flask-Mailman.
-    Logs failures instead of failing silently.
+    Core email sender using Resend API.
+    Cloud-friendly and reliable.
     """
     try:
-        message = EmailMessage(
-            subject=subject,
-            body=body,
-            from_email=_get_sender(),
-            to=[to_email]
-        )
-        message.send()
+        params = {
+            "from": _get_sender(),
+            "to": [to_email],
+            "subject": subject,
+            "html": body.replace('\n', '<br>')  # Convert to HTML
+        }
+        
+        result = resend.Emails.send(params)
         logging.info(f"Email sent successfully to {to_email}")
         return True
 
