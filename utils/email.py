@@ -2,6 +2,29 @@ from flask import current_app, url_for
 import logging
 import requests
 
+def test_brevo_api_key():
+    """Test if Brevo API key is valid"""
+    try:
+        url = "https://api.brevo.com/v3/account"
+        headers = {
+            "accept": "application/json",
+            "api-key": current_app.config.get("BREVO_API_KEY"),
+            "content-type": "application/json"
+        }
+        
+        response = requests.get(url, headers=headers, timeout=10)
+        
+        if response.status_code == 200:
+            logging.info("Brevo API key is valid")
+            return True
+        else:
+            logging.error(f"Brevo API key invalid: {response.status_code} - {response.text}")
+            return False
+            
+    except Exception as e:
+        logging.error(f"Brevo API key test failed: {str(e)}")
+        return False
+
 def _send_via_brevo(to_email, subject, body):
     """Send email using Brevo API"""
     try:
@@ -66,6 +89,16 @@ def send_email(to_email, subject, body):
     Send email using Brevo API.
     Cloud-friendly, reliable, works for all email addresses.
     """
+    # Test API key first
+    api_key = current_app.config.get("BREVO_API_KEY", "")
+    if not api_key:
+        logging.error("BREVO_API_KEY not configured")
+        return False
+    
+    if not api_key.startswith("xkeysib-"):
+        logging.error("Invalid Brevo API key format. Should start with 'xkeysib-'")
+        return False
+    
     return _send_via_brevo(to_email, subject, body)
 
 
