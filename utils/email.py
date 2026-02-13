@@ -1,8 +1,21 @@
 from flask import current_app, url_for
-import resend
 import logging
 
-# Resend client will be initialized in app context
+# Resend will be initialized when needed within app context
+resend = None
+
+def _get_resend_client():
+    """Initialize Resend client within app context"""
+    global resend
+    if resend is None:
+        try:
+            import resend as resend_lib
+            resend_lib.api_key = current_app.config.get('RESEND_API_KEY', 're_a8DrgsUK_LCTo9FaBkR8J4XUvRauYS2gB')
+            resend = resend_lib
+        except ImportError:
+            logging.error("Resend package not installed")
+            return None
+    return resend
 
 
 def _get_sender():
@@ -35,9 +48,11 @@ def send_email(to_email, subject, body):
     Cloud-friendly and reliable.
     """
     try:
-        # Initialize Resend API key in app context
-        resend.api_key = current_app.config.get('RESEND_API_KEY', 're_a8DrgsUK_LCTo9FaBkR8J4XUvRauYS2gB')
-        
+        resend_client = _get_resend_client()
+        if resend_client is None:
+            logging.error("Resend client not available")
+            return False
+            
         params = {
             "from": _get_sender(),
             "to": [to_email],
@@ -45,7 +60,7 @@ def send_email(to_email, subject, body):
             "html": body.replace('\n', '<br>')  # Convert to HTML
         }
         
-        result = resend.Emails.send(params)
+        result = resend_client.Emails.send(params)
         logging.info(f"Email sent successfully to {to_email}")
         return True
 
@@ -232,6 +247,11 @@ def send_approval_credentials_email(applicant, username, student_id, temp_passwo
     """
 
     try:
+        resend_client = _get_resend_client()
+        if resend_client is None:
+            logging.error("Resend client not available")
+            return False
+            
         params = {
             "from": _get_sender(),
             "to": [applicant.email],
@@ -239,7 +259,7 @@ def send_approval_credentials_email(applicant, username, student_id, temp_passwo
             "html": body
         }
         
-        result = resend.Emails.send(params)
+        result = resend_client.Emails.send(params)
         logging.info(f"Approval credentials email sent successfully to {applicant.email}")
         return True
     except Exception as e:
