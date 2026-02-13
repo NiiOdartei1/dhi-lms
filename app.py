@@ -16,6 +16,8 @@ import logging
 from datetime import datetime
 from flask import Flask, render_template, redirect, url_for, flash, request, abort, jsonify, send_from_directory, current_app, g
 from werkzeug.utils import secure_filename
+import time
+import signal
 
 # Load environment variables
 from dotenv import load_dotenv
@@ -125,6 +127,12 @@ def before_request():
     """Monitor request start time and memory usage to prevent timeouts"""
     g.start_time = time.time()
     
+    # Check for existing long-running requests
+    elapsed = time.time() - g.start_time
+    if elapsed > 55:  # Kill requests after 55 seconds
+        logger.error(f"⏰ REQUEST TIMEOUT: {request.method} {request.path} after {elapsed:.2f}s - Terminating to prevent worker kill")
+        abort(408, "Request timeout - Please try again")
+    
     # Log memory usage at start of each request
     try:
         import psutil
@@ -139,7 +147,11 @@ def after_request(response):
     """Check request duration and log slow requests"""
     if hasattr(g, 'start_time'):
         duration = time.time() - g.start_time
-        if duration > 10:  # Log requests taking longer than 10 seconds
+        
+        # Warn about slow requests
+        if duration > 30:  # Warn for requests over 30 seconds
+            logger.warning(f"🐌 SLOW REQUEST: {request.method} {request.path} took {duration:.2f}s - This may cause worker timeout!")
+        elif duration > 10:  # Log requests taking longer than 10 seconds
             logger.warning(f"🐌 Slow request detected: {request.method} {request.path} took {duration:.2f}s")
         
         # Log memory usage at end of request
