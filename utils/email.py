@@ -1,58 +1,39 @@
 from flask import current_app, url_for
 import logging
-import smtplib
-import socket
+import requests
 
-# Resend will be initialized when needed within app context
-resend = None
-
-def _get_resend_client():
-    """Initialize Resend client within app context"""
-    global resend
-    if resend is None:
-        try:
-            import resend as resend_lib
-            resend_lib.api_key = current_app.config.get('RESEND_API_KEY', 're_a8DrgsUK_LCTo9FaBkR8J4XUvRauYS2gB')
-            resend = resend_lib
-        except ImportError:
-            logging.error("Resend package not installed")
-            return None
-    return resend
-
-def _send_via_gmail(to_email, subject, body):
-    """Fallback to Gmail SMTP for any email address"""
+def _send_via_brevo(to_email, subject, body):
+    """Send email using Brevo API"""
     try:
-        # Set socket timeout to prevent hanging
-        socket.setdefaulttimeout(30)
+        url = "https://api.brevo.com/v3/smtp/email"
         
-        # Create SMTP connection
-        smtp_server = smtplib.SMTP('smtp.gmail.com', 587)
-        smtp_server.starttls()
+        headers = {
+            "accept": "application/json",
+            "api-key": current_app.config.get("BREVO_API_KEY"),
+            "content-type": "application/json"
+        }
         
-        # Login with Gmail credentials
-        smtp_server.login(
-            current_app.config.get('MAIL_USERNAME'),
-            current_app.config.get('MAIL_PASSWORD')
-        )
+        payload = {
+            "sender": {
+                "email": current_app.config.get("BREVO_SENDER_EMAIL", "noreply@dhi-online.onrender.com"),
+                "name": "DHI LMS"
+            },
+            "to": [{"email": to_email}],
+            "subject": subject,
+            "htmlContent": body.replace('\n', '<br>')
+        }
         
-        # Create email message
-        from_email = current_app.config.get('MAIL_USERNAME')
-        message = f"""From: {from_email}
-To: {to_email}
-Subject: {subject}
-Content-Type: text/html; charset="utf-8"
-
-{body.replace('\n', '<br>')}"""
+        response = requests.post(url, json=payload, headers=headers, timeout=30)
         
-        # Send email
-        smtp_server.sendmail(from_email, to_email, message.encode('utf-8'))
-        smtp_server.quit()
-        
-        logging.info(f"Email sent successfully via Gmail to {to_email}")
-        return True
-        
+        if response.status_code == 201:
+            logging.info(f"Email sent successfully via Brevo to {to_email}")
+            return True
+        else:
+            logging.error(f"Brevo API error: {response.status_code} - {response.text}")
+            return False
+            
     except Exception as e:
-        logging.error(f"Gmail sending failed to {to_email}: {str(e)}")
+        logging.error(f"Brevo sending failed to {to_email}: {str(e)}")
         return False
 
 
@@ -82,29 +63,10 @@ def _get_applicant_name(applicant):
 
 def send_email(to_email, subject, body):
     """
-    Hybrid email sender: Try Resend first, fallback to Gmail SMTP.
-    Works for all email addresses.
+    Send email using Brevo API.
+    Cloud-friendly, reliable, works for all email addresses.
     """
-    # Try Resend first (faster, cloud-friendly)
-    try:
-        resend_client = _get_resend_client()
-        if resend_client is not None:
-            params = {
-                "from": _get_sender(),
-                "to": [to_email],
-                "subject": subject,
-                "html": body.replace('\n', '<br>')
-            }
-            
-            result = resend_client.Emails.send(params)
-            logging.info(f"Email sent successfully via Resend to {to_email}")
-            return True
-    except Exception as e:
-        logging.warning(f"Resend failed for {to_email}: {str(e)}")
-    
-    # Fallback to Gmail SMTP (works for all emails)
-    logging.info(f"Falling back to Gmail SMTP for {to_email}")
-    return _send_via_gmail(to_email, subject, body)
+    return _send_via_brevo(to_email, subject, body)
 
 
 # ------------------------------------------------------------------
@@ -285,21 +247,7 @@ def send_approval_credentials_email(applicant, username, student_id, temp_passwo
     """
 
     try:
-        resend_client = _get_resend_client()
-        if resend_client is None:
-            logging.error("Resend client not available")
-            return False
-            
-        params = {
-            "from": _get_sender(),
-            "to": [applicant.email],
-            "subject": subject,
-            "html": body
-        }
-        
-        result = resend_client.Emails.send(params)
-        logging.info(f"Approval credentials email sent successfully to {applicant.email}")
-        return True
+        return _send_via_brevo(applicant.email, subject, body)
     except Exception as e:
         logging.error(
             f"Failed to send approval credentials email to {applicant.email}: {str(e)}"

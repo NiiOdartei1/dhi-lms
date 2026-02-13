@@ -67,11 +67,12 @@ class Config:
     )
 
     # ------------------------------------------------------
-    # EMAIL CONFIGURATION (HYBRID: Resend + Gmail Fallback)
+    # EMAIL CONFIGURATION (BREVO API)
     # ------------------------------------------------------
-    RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "re_a8DrgsUK_LCTo9FaBkR8J4XUvRauYS2gB")
+    BREVO_API_KEY = os.environ.get("BREVO_API_KEY", "")
+    BREVO_SENDER_EMAIL = os.environ.get("BREVO_SENDER_EMAIL", "noreply@dhi-online.onrender.com")
     
-    # Gmail SMTP configuration (fallback)
+    # Keep Gmail as fallback (optional)
     MAIL_SERVER = "smtp.gmail.com"
     MAIL_PORT = 587
     MAIL_USE_TLS = True
@@ -79,8 +80,8 @@ class Config:
     MAIL_USERNAME = os.environ.get("MAIL_USERNAME", "lampteyjoseph860@gmail.com")
     MAIL_PASSWORD = os.environ.get("MAIL_PASSWORD", "injjjivjdnlqtlum")
     
-    # Use Resend default domain for primary sending
-    MAIL_DEFAULT_SENDER = "onboarding@resend.dev"
+    # Default sender for compatibility
+    MAIL_DEFAULT_SENDER = "DHI LMS <noreply@dhi-online.onrender.com>"
 
     # ------------------------------------------------------
     # ZOOM (OPTIONAL)
