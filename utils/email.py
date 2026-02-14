@@ -32,7 +32,7 @@ def _send_via_brevo(to_email, subject, body):
         
         headers = {
             "accept": "application/json",
-            "api-key": current_app.config.get("BREVO_SMTP_KEY"),
+            "api-key": current_app.config.get("BREVO_API_KEY"),
             "content-type": "application/json"
         }
         
@@ -89,14 +89,14 @@ def send_email(to_email, subject, body):
     Send email using Brevo SMTP API.
     Cloud-friendly, reliable, works for all email addresses.
     """
-    # Test SMTP key first
-    smtp_key = current_app.config.get("BREVO_SMTP_KEY", "")
-    if not smtp_key:
-        logging.error("BREVO_SMTP_KEY not configured")
+    # Test API key first
+    api_key = current_app.config.get("BREVO_API_KEY", "")
+    if not api_key:
+        logging.error("BREVO_API_KEY not configured")
         return False
     
-    if not smtp_key.startswith("xsmtpsib-"):
-        logging.error("Invalid Brevo SMTP key format. Should start with 'xsmtpsib-'")
+    if not api_key.startswith("xkeysib-"):
+        logging.error("Invalid Brevo API key format. Should start with 'xkeysib-'")
         return False
     
     return _send_via_brevo(to_email, subject, body)
