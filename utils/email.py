@@ -89,8 +89,12 @@ def send_email(to_email, subject, body):
     Send email using Brevo SMTP API.
     Cloud-friendly, reliable, works for all email addresses.
     """
-    # Test API key first
+    # Debug: Log environment variables
     api_key = current_app.config.get("BREVO_API_KEY", "")
+    logging.info(f"DEBUG: BREVO_API_KEY configured: {bool(api_key)}")
+    logging.info(f"DEBUG: BREVO_API_KEY length: {len(api_key)}")
+    logging.info(f"DEBUG: BREVO_API_KEY starts with xkeysib: {api_key.startswith('xkeysib-')}")
+    
     if not api_key:
         logging.error("BREVO_API_KEY not configured")
         return False
