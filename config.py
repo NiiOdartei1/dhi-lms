@@ -69,6 +69,7 @@ class Config:
     # ------------------------------------------------------
     # EMAIL CONFIGURATION (BREVO SMTP)
     # ------------------------------------------------------
+    BREVO_API_KEY = os.environ.get("BREVO_API_KEY", "")
     BREVO_SMTP_KEY = os.environ.get("BREVO_SMTP_KEY", "")
     BREVO_SENDER_EMAIL = os.environ.get("BREVO_SENDER_EMAIL", "noreply@dhi-online.onrender.com")
     
