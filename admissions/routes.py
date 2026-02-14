@@ -167,13 +167,27 @@ def verify_email():
 
 @admissions_bp.route('/resend-verification', methods=['GET', 'POST'])
 def resend_verification():
-    user_email = session.get('pending_verification_email')
+    user_email = session.get('pending_email')  # Fixed: use 'pending_email' not 'pending_verification_email'
     if not user_email:
         flash("No email to verify.", "warning")
         return redirect(url_for('admissions.login'))
 
-    # logic to generate and send verification code here
-    flash("Verification code resent. Please check your email.", "success")
+    # Generate new verification code
+    import random
+    verification_code = str(random.randint(100000, 999999))
+    
+    # Find applicant and update verification code
+    applicant = Applicant.query.filter_by(email=user_email).first()
+    if applicant:
+        applicant.verification_code = verification_code
+        db.session.commit()
+        
+        # Send verification email
+        send_email_verification(applicant, verification_code)
+        flash("Verification code resent. Please check your email.", "success")
+    else:
+        flash("Applicant not found.", "danger")
+    
     return redirect(url_for('admissions.verify_email'))
 
 # =====================================================
