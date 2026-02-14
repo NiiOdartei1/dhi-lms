@@ -357,7 +357,8 @@ if IS_PRODUCTION:
     with app.app_context():
         success, message = initialize_database()
         if success:
-            logger.info("🎉 Auto-initialization successful!")
+            # Database recreation trigger - 2026-02-14 08:47
+            logger.info("🔄 Database recreation triggered after truncate cascade")
         else:
             logger.error(f"⚠️ Auto-initialization failed: {message}")
             logger.error("💡 You can manually initialize by visiting /init-db")
