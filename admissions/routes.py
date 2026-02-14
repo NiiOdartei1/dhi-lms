@@ -165,7 +165,7 @@ def verify_email():
 
     return render_template('admissions/verify_email.html')
 
-@admissions_bp.route('/resend-verification', methods=['POST'])
+@admissions_bp.route('/resend-verification', methods=['GET', 'POST'])
 def resend_verification():
     user_email = session.get('pending_verification_email')
     if not user_email:
