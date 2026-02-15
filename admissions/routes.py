@@ -1,6 +1,7 @@
 from datetime import datetime
 from functools import wraps
 import json
+import logging
 import os, random, string
 from flask import (Blueprint, current_app, render_template, redirect, request, url_for, flash, session, make_response)
 import pdfkit
