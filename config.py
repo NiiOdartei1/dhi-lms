@@ -70,10 +70,10 @@ class Config:
     # EMAIL CONFIGURATION (BREVO HTTPS API)
     # ------------------------------------------------------
     BREVO_API_KEY = os.environ.get("BREVO_API_KEY", "")
-    BREVO_DEFAULT_SENDER = os.environ.get("BREVO_DEFAULT_SENDER", "noreply@dhi-online.onrender.com")
+    BREVO_DEFAULT_SENDER = os.environ.get("BREVO_DEFAULT_SENDER", "lampteyjoseph860@gmail.com")
     
-    # Use Brevo sender for all email operations
-    MAIL_DEFAULT_SENDER = os.environ.get("BREVO_DEFAULT_SENDER", "noreply@dhi-online.onrender.com")
+    # Use verified Gmail sender for immediate delivery
+    MAIL_DEFAULT_SENDER = os.environ.get("BREVO_DEFAULT_SENDER", "lampteyjoseph860@gmail.com")
 
     # ------------------------------------------------------
     # ZOOM (OPTIONAL)
