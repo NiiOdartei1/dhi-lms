@@ -1706,6 +1706,20 @@ def pay_fees():
     ).all()
 
     total_fee = sum(f.amount for f in fee_structures) if fee_structures else 0.0
+    
+    # Get fee percentage settings
+    from models import FeePercentageSettings
+    fee_settings = FeePercentageSettings.get_active_settings(year)
+    
+    # Calculate base payment requirement
+    if fee_settings:
+        base_payment_required = (fee_settings.base_payment_percentage / 100.0) * total_fee
+        base_payment_deadline = fee_settings.base_payment_deadline
+        allow_installments = fee_settings.allow_installments_after_base
+    else:
+        base_payment_required = total_fee  # Default to full payment if no settings
+        base_payment_deadline = None
+        allow_installments = True
 
     # Get approved payments
     approved_txns = StudentFeeTransaction.query.filter_by(
@@ -1714,14 +1728,21 @@ def pay_fees():
         semester=semester,
         is_approved=True
     ).all()
-
     current_balance = sum(txn.amount for txn in approved_txns)
     remaining = max(0, total_fee - current_balance)
-
+    
+    # Check if base payment has been made
+    base_payment_made = current_balance >= base_payment_required
+    
     # POST: Submit payment
     if request.method == 'POST':
         amount = float(request.form.get('amount', 0))
-
+        
+        # VALIDATION: Base payment requirement
+        if not base_payment_made and amount < base_payment_required:
+            flash(f"Base payment of GHS {base_payment_required:.2f} is required before installments. Current payment: GHS {amount:.2f}", "danger")
+            return redirect(url_for('student.pay_fees', year=year, semester=semester))
+        
         # VALIDATION: Cannot pay more than remaining
         if amount > remaining:
             flash(f"Cannot pay more than GHS {remaining:.2f}", "danger")
@@ -1775,7 +1796,10 @@ def pay_fees():
         programme=programme,
         level=level,
         allow_installments=allow_installments,
-        student_level=int(level)
+        student_level=int(level),
+        base_payment_required=base_payment_required if fee_settings else total_fee,
+        base_payment_deadline=base_payment_deadline,
+        fee_settings=fee_settings
     )
 
 

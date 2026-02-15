@@ -22,6 +22,73 @@
     </div>
   </div>
 
+  <!-- Fee Percentage Settings -->
+  <div class="card mb-4 shadow-sm border-0">
+    <div class="card-header py-2" style="background:linear-gradient(90deg,#6c757d,#495057);">
+      <div class="d-flex align-items-center justify-content-between">
+        <div class="text-white small fw-semibold"><i class="fas fa-percentage me-2"></i> Fee Percentage Settings</div>
+        <div class="text-white small">Global payment policy configuration</div>
+      </div>
+    </div>
+    <div class="card-body py-3">
+      <form id="percentageForm" method="POST" class="row gy-2 gx-2">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        
+        <div class="col-md-3 col-6">
+          <label class="form-label small fw-semibold">Academic Year <span class="text-warning">*</span></label>
+          <select name="academic_year" class="form-select form-select-sm" required>
+            <option value="">-- Select --</option>
+            {% for year in academic_years %}
+              <option value="{{ year.start_date.year }}" {% if current_settings and current_settings.academic_year == year.start_date.year %}selected{% endif %}>
+                {{ year.start_date.year }}
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="col-md-3 col-6">
+          <label class="form-label small fw-semibold">Base Payment % <span class="text-warning">*</span></label>
+          <div class="input-group input-group-sm">
+            <input type="number" name="base_payment_percentage" class="form-control" 
+                   value="{{ current_settings.base_payment_percentage if current_settings else 50.0 }}" 
+                   min="0" max="100" step="0.1" required>
+            <span class="input-group-text">%</span>
+          </div>
+          <small class="form-text text-muted">Percentage of total fees required as base payment</small>
+        </div>
+
+        <div class="col-md-3 col-6">
+          <label class="form-label small fw-semibold">Base Payment Deadline <span class="text-warning">*</span></label>
+          <input type="date" name="base_payment_deadline" class="form-control form-control-sm" 
+                 value="{{ current_settings.base_payment_deadline.strftime('%Y-%m-%d') if current_settings else '' }}" 
+                 required>
+          <small class="form-text text-muted">Deadline for base payment</small>
+        </div>
+
+        <div class="col-md-3 col-6">
+          <label class="form-label small fw-semibold">Allow Installments</label>
+          <div class="form-check form-switch mt-2">
+            <input class="form-check-input" type="checkbox" name="allow_installments_after_base" 
+                   {% if current_settings and current_settings.allow_installments_after_base %}checked{% endif %}>
+            <label class="form-check-label small">Enable installments after base payment</label>
+          </div>
+        </div>
+
+        <div class="col-12">
+          <label class="form-label small fw-semibold">Policy Description</label>
+          <textarea name="description" class="form-control form-control-sm" rows="2">{{ current_settings.description if current_settings else '' }}</textarea>
+          <small class="form-text text-muted">Description of the fee policy for students</small>
+        </div>
+
+        <div class="col-12">
+          <button type="submit" class="btn btn-sm btn-success">
+            <i class="fas fa-save me-1"></i> Save Percentage Settings
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <!-- Form Card -->
   <div class="card mb-4 shadow-sm border-0">
     <div class="card-header py-2" style="background:linear-gradient(90deg,#ff7e5f,#feb47b);">

@@ -2033,6 +2033,36 @@ class StudentFeeBalance(db.Model):
     __table_args__ = (db.UniqueConstraint('student_id', 'fee_structure_id', name='uq_student_fee_structure'),)
 
 
+class FeePercentageSettings(db.Model):
+    """Global fee percentage settings for base payment requirements"""
+    
+    __tablename__ = 'fee_percentage_settings'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    
+    # Percentage of total fees that must be paid as base amount
+    base_payment_percentage = db.Column(db.Float, nullable=False, default=50.0)
+    
+    # Deadline for base payment (before installments allowed)
+    base_payment_deadline = db.Column(db.Date, nullable=False)
+    
+    # Academic year this setting applies to
+    academic_year = db.Column(db.String(20), nullable=False)
+    
+    # Whether installments are allowed after base payment
+    allow_installments_after_base = db.Column(db.Boolean, default=True)
+    
+    # Description of the fee policy
+    description = db.Column(db.Text)
+    
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Get active settings for current academic year
+    @classmethod
+    def get_active_settings(cls, academic_year):
+        return cls.query.filter_by(academic_year=academic_year).first()
+
 
 class Quiz(db.Model):
 

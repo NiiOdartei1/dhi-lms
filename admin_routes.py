@@ -12,7 +12,7 @@ from admissions.models import AdmissionVoucher, Application
 
 from admissions.forms import CERTIFICATE_PROGRAMMES, DIPLOMA_PROGRAMMES, STUDY_FORMATS
 
-from models import PasswordResetRequest, PasswordResetToken, StudentFeeBalance, db, User, Admin, StudentProfile, Quiz, Question, Option, StudentQuizSubmission, Assignment, CourseMaterial, Course, CourseLimit, TimetableEntry, TeacherProfile, AcademicCalendar, AcademicYear, ProgrammeFeeStructure, StudentFeeTransaction, Exam, ExamSubmission, ExamQuestion, ExamAttempt, ExamOption, ExamSet, ExamSetQuestion
+from models import PasswordResetRequest, PasswordResetToken, StudentFeeBalance, db, User, Admin, StudentProfile, Quiz, Question, Option, StudentQuizSubmission, Assignment, CourseMaterial, Course, CourseLimit, TimetableEntry, TeacherProfile, AcademicCalendar, AcademicYear, ProgrammeFeeStructure, StudentFeeTransaction, Exam, ExamSubmission, ExamQuestion, ExamAttempt, ExamOption, ExamSet, ExamSetQuestion, FeePercentageSettings
 
 from datetime import date, datetime, timedelta, time
 
@@ -7203,10 +7203,54 @@ def assign_fees():
 
     CLASS_LEVELS = ['100', '200', '300', '400']  # Fixed format
 
+    # Get current percentage settings
+    current_year = str(datetime.now().year)
+    current_settings = FeePercentageSettings.get_active_settings(current_year)
+
 
 
     if request.method == 'POST':
 
+        # Handle percentage settings form
+        if 'base_payment_percentage' in request.form:
+            academic_year = request.form.get('academic_year')
+            base_percentage = float(request.form.get('base_payment_percentage'))
+            deadline_str = request.form.get('base_payment_deadline')
+            allow_installments = 'allow_installments_after_base' in request.form
+            description = request.form.get('description', '')
+            
+            if deadline_str:
+                deadline = datetime.strptime(deadline_str, '%Y-%m-%d').date()
+            else:
+                flash("Base payment deadline is required.", "danger")
+                return redirect(url_for('admin.assign_fees'))
+            
+            # Check if settings exist for this academic year
+            existing_settings = FeePercentageSettings.get_active_settings(academic_year)
+            
+            if existing_settings:
+                # Update existing settings
+                existing_settings.base_payment_percentage = base_percentage
+                existing_settings.base_payment_deadline = deadline
+                existing_settings.allow_installments_after_base = allow_installments
+                existing_settings.description = description
+                existing_settings.updated_at = datetime.utcnow()
+            else:
+                # Create new settings
+                new_settings = FeePercentageSettings(
+                    base_payment_percentage=base_percentage,
+                    base_payment_deadline=deadline,
+                    academic_year=academic_year,
+                    allow_installments_after_base=allow_installments,
+                    description=description
+                )
+                db.session.add(new_settings)
+            
+            db.session.commit()
+            flash("✓ Fee percentage settings saved successfully!", "success")
+            return redirect(url_for('admin.assign_fees'))
+        
+        # Handle regular fee assignment form
         programme_name = request.form.get('programme_name')
 
         programme_level = request.form.get('class_level')  # ✅ rename
@@ -7372,21 +7416,14 @@ def assign_fees():
 
 
     return render_template(
-
         'admin/assign_fees.html',
-
         groups=groups,
-
         CERTIFICATE_PROGRAMMES=CERTIFICATE_PROGRAMMES,
-
         DIPLOMA_PROGRAMMES=DIPLOMA_PROGRAMMES,
-
         CLASS_LEVELS=CLASS_LEVELS,
-
         STUDY_FORMATS=STUDY_FORMATS,
-
-        academic_years=academic_years
-
+        academic_years=academic_years,
+        current_settings=current_settings
     )
 
 
