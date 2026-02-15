@@ -7676,22 +7676,57 @@ def edit_fee_group(group_id):
 
         return redirect(url_for('main.index'))
 
-
-
     group = ProgrammeFeeStructure.query.get_or_404(group_id)
-
     academic_years = AcademicYear.query.order_by(AcademicYear.start_date.desc()).all()
-
     CLASS_LEVELS = ['100 Level', '200 Level', '300 Level', '400 Level']
 
-
+    # Get current percentage settings
+    current_year = str(datetime.now().year)
+    current_settings = FeePercentageSettings.get_active_settings(current_year)
 
     if request.method == 'POST':
+        # Handle percentage settings form
+        if request.form.get('save_percentage_settings'):
+            academic_year = request.form.get('academic_year')
+            base_percentage = float(request.form.get('base_payment_percentage'))
+            deadline_str = request.form.get('base_payment_deadline')
+            allow_installments = 'allow_installments_after_base' in request.form
+            description = request.form.get('description', '')
 
+            if deadline_str:
+                deadline = datetime.strptime(deadline_str, '%Y-%m-%d').date()
+            else:
+                flash("Base payment deadline is required.", "danger")
+                return redirect(url_for('admin.edit_fee_group', group_id=group_id))
+
+            # Check if settings exist for this academic year
+            existing_settings = FeePercentageSettings.get_active_settings(academic_year)
+
+            if existing_settings:
+                # Update existing settings
+                existing_settings.base_payment_percentage = base_percentage
+                existing_settings.base_payment_deadline = deadline
+                existing_settings.allow_installments_after_base = allow_installments
+                existing_settings.description = description
+                existing_settings.updated_at = datetime.utcnow()
+            else:
+                # Create new settings
+                new_settings = FeePercentageSettings(
+                    base_payment_percentage=base_percentage,
+                    base_payment_deadline=deadline,
+                    academic_year=academic_year,
+                    allow_installments_after_base=allow_installments,
+                    description=description
+                )
+                db.session.add(new_settings)
+
+            db.session.commit()
+            flash("✓ Fee percentage settings saved successfully!", "success")
+            return redirect(url_for('admin.edit_fee_group', group_id=group_id))
+
+        # Handle regular fee group form
         group.programme_name = request.form.get('programme_name')
-
-        group.programme_level = request.form.get('programme_level')  # ✅ Fix: use programme_level not class_level
-
+        group.programme_level = request.form.get('programme_level')  # Fix: use programme_level not class_level
         group.study_format = request.form.get('study_format')
 
         
