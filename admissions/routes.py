@@ -869,12 +869,9 @@ def download_application_pdf():
         flash("No application found to download.", "warning")
         return redirect(url_for('admissions.dashboard'))
 
-    # Render HTML template for PDF
-    html = render_template('admissions/application_pdf.html', application=application)
-
     try:
         # Modern CSS styling for colorful PDF (WeasyPrint compatible)
-        css = CSS(string='''
+        css_content = '''
             @page {
                 size: A4;
                 margin: 2cm;
@@ -985,18 +982,43 @@ def download_application_pdf():
                 color: white;
                 border-radius: 8px;
             }
-        ''')
+        '''
 
-        # Generate PDF with WeasyPrint (alternative approach)
-        from weasyprint import HTML as WeasyHTML
-        html_doc = WeasyHTML(string=html)
-        pdf_data = html_doc.write_pdf(stylesheets=[css])
+        # Render HTML template for PDF
+        html = render_template('admissions/application_pdf.html', application=application)
         
-        # Return as downloadable response
-        response = make_response(pdf_data)
-        response.headers['Content-Type'] = 'application/pdf'
-        response.headers['Content-Disposition'] = f'attachment; filename=application_{application.id}.pdf'
-        return response
+        # Create temporary files for WeasyPrint
+        import tempfile
+        import os
+        
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.html', delete=False) as html_file:
+            html_file.write(html)
+            html_file_path = html_file.name
+        
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.css', delete=False) as css_file:
+            css_file.write(css_content)
+            css_file_path = css_file.name
+        
+        try:
+            # Generate PDF using file paths
+            from weasyprint import HTML
+            html_doc = HTML(filename=html_file_path)
+            css_doc = CSS(filename=css_file_path)
+            pdf_data = html_doc.write_pdf(stylesheets=[css_doc])
+            
+            # Return as downloadable response
+            response = make_response(pdf_data)
+            response.headers['Content-Type'] = 'application/pdf'
+            response.headers['Content-Disposition'] = f'attachment; filename=application_{application.id}.pdf'
+            return response
+            
+        finally:
+            # Clean up temporary files
+            try:
+                os.unlink(html_file_path)
+                os.unlink(css_file_path)
+            except:
+                pass
 
     except Exception as e:
         logging.error(f"Failed to generate PDF: {str(e)}")
