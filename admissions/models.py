@@ -127,10 +127,14 @@ class Application(db.Model):
         # Look for photo document in related documents
         for doc in self.documents:
             if doc.document_type == 'photo' and doc.file_path:
-                return url_for('static', filename=doc.file_path)
+                url = url_for('static', filename=doc.file_path)
+                print(f"DEBUG: Found photo document, URL: {url}")
+                return url
         
         # Return default avatar if no photo found
-        return url_for('static', filename='uploads/profile_pictures/default_avatar.png')
+        default_url = url_for('static', filename='uploads/profile_pictures/default_avatar.png')
+        print(f"DEBUG: No photo found, using default: {default_url}")
+        return default_url
 
 class ApplicationDocument(db.Model):
     __tablename__ = 'application_document'
