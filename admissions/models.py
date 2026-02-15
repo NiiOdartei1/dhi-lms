@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+from flask import url_for
 from utils.extensions import db
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_login import UserMixin
@@ -119,6 +120,17 @@ class Application(db.Model):
     def full_name(self):
         parts = [self.surname, self.first_name, self.other_names]
         return " ".join([p for p in parts if p])
+
+    @property
+    def profile_picture_url(self):
+        """Get URL for applicant's profile picture from documents"""
+        # Look for photo document in related documents
+        for doc in self.documents:
+            if doc.document_type == 'photo' and doc.file_path:
+                return url_for('static', filename=doc.file_path)
+        
+        # Return default avatar if no photo found
+        return url_for('static', filename='uploads/profile_pictures/default_avatar.png')
 
 class ApplicationDocument(db.Model):
     __tablename__ = 'application_document'
