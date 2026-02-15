@@ -1676,209 +1676,107 @@ def student_fees():
     )
 
 
-
-
-
 @student_bp.route('/pay-fees', methods=['GET', 'POST'])
-
 @login_required
-
 def pay_fees():
-
     if current_user.role != 'student':
-
         abort(403)
 
-
-
     student = current_user
-
     profile = StudentProfile.query.filter_by(user_id=student.user_id).first()
 
     if not profile:
-
         flash("Student profile not found.", "danger")
-
         return redirect(url_for('main.index'))
 
-
-
     programme = profile.current_programme
-
     level = str(int(profile.programme_level)) if profile.programme_level else '100'
-
     study_format = profile.study_format or 'Regular'
 
-
-
     year = request.args.get('year') or str(datetime.now().year)
-
     semester = request.args.get('semester') or 'First'
 
-
-
     # Get fees
-
     fee_structures = ProgrammeFeeStructure.query.filter_by(
-
         programme_name=programme,
-
         programme_level=level,
-
         study_format=study_format,
-
         academic_year=year,
-
         semester=semester
-
     ).all()
-
-
 
     total_fee = sum(f.amount for f in fee_structures) if fee_structures else 0.0
 
-
-
     # Get approved payments
-
     approved_txns = StudentFeeTransaction.query.filter_by(
-
         student_id=student.id,
-
         academic_year=year,
-
         semester=semester,
-
         is_approved=True
-
     ).all()
 
-
-
     current_balance = sum(txn.amount for txn in approved_txns)
-
     remaining = max(0, total_fee - current_balance)
 
-
-
     # POST: Submit payment
-
     if request.method == 'POST':
-
         amount = float(request.form.get('amount', 0))
 
-        
-
         # VALIDATION: Cannot pay more than remaining
-
         if amount > remaining:
-
             flash(f"Cannot pay more than GHS {remaining:.2f}", "danger")
-
             return redirect(url_for('student.pay_fees', year=year, semester=semester))
-
-        
 
         if amount <= 0:
-
             flash("Amount must be greater than 0", "danger")
-
             return redirect(url_for('student.pay_fees', year=year, semester=semester))
-
-
 
         description = request.form.get('description') or "School Fees"
 
-
-
         txn = StudentFeeTransaction(
-
             student_id=student.id,
-
             academic_year=year,
-
             semester=semester,
-
             amount=amount,
-
             description=description,
-
             is_approved=False,
-
             timestamp=datetime.utcnow()
-
         )
-
         db.session.add(txn)
-
         db.session.commit()
 
-
-
         flash(f"✓ Payment of GHS {amount:.2f} submitted", "success")
-
         return redirect(url_for('student.pay_fees', year=year, semester=semester))
 
-
-
     # Available years
-
     years = db.session.query(ProgrammeFeeStructure.academic_year).filter_by(
-
         programme_name=programme,
-
         programme_level=level,
-
         study_format=study_format
-
     ).distinct().order_by(ProgrammeFeeStructure.academic_year.desc()).all()
-
     available_years = [y[0] for y in years]
 
-
-
     # Determine if installments are allowed based on level
-
     # Level 100 (freshers): Full payment only
-
     # Level 200+: Installments allowed
-
     allow_installments = int(level) >= 200
 
-
-
     return render_template(
-
         'student/pay_fees.html',
-
         assigned_fees=fee_structures,
-
         total_fee=total_fee,
-
         current_balance=current_balance,
-
         remaining=remaining,
-
         max_allowed_amount=remaining,
-
         year=year,
-
         semester=semester,
-
         available_years=available_years,
-
         transactions=approved_txns,
-
         programme=programme,
-
         level=level,
-
         allow_installments=allow_installments,
-
         student_level=int(level)
-
     )
-
 
 
 @student_bp.route('/download-receipt/<int:txn_id>')
