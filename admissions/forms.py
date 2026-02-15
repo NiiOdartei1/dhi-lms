@@ -111,13 +111,11 @@ DIPLOMA_PROGRAMMES = [
     ('Diploma in Early Childhood Education', 'Diploma in Early Childhood Education')
 ]
 
-# Study formats already have a blank option
+# Study formats - Regular and Online only
 STUDY_FORMATS = [
     ('', '— Select Format —'),
-    ('Regular', 'Regular'),
-    ('Sandwich', 'Sandwich'),
-    ('Part-Time', 'Part-Time'),
-    ('Weekend', 'Weekend')
+    ('Regular', 'Regular: Admissions process only, no LMS features'),
+    ('Online', 'Online: Access to quizzes, assignments, exams, materials, chat')
 ]
 
 class ProgrammeChoiceForm(FlaskForm):
