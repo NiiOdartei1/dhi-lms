@@ -28,30 +28,11 @@
     <div class="card-body row g-2 p-2">
         <div class="col-md-4 d-flex align-items-center gap-2">
     <strong class="fs-8">Name:</strong>
-    {% if documents|selectattr("document_type","equalto","photo")|list %}
-        {% set photo_doc = documents|selectattr("document_type","equalto","photo")|first %}
-        {% if photo_doc and photo_doc.file_path %}
-            <img src="{{ url_for('static', filename=photo_doc.file_path) }}"
-                 alt="Applicant Photo"
-                 class="rounded-circle"
-                 width="35"
-                 height="35"
-                 data-fallback="{{ url_for('static', filename='uploads/profile_pictures/default_avatar.png') }}"
-                 onerror="this.src=this.dataset.fallback;">
-        {% else %}
-            <img src="{{ url_for('static', filename='uploads/profile_pictures/default_avatar.png') }}"
-                 alt="Default Photo"
-                 class="rounded-circle"
-                 width="35"
-                 height="35">
-        {% endif %}
-    {% else %}
-        <img src="{{ url_for('static', filename='uploads/profile_pictures/default_avatar.png') }}"
-             alt="Default Photo"
-             class="rounded-circle"
-             width="35"
-             height="35">
-    {% endif %}
+    <img src="{{ application.profile_picture_url }}"
+         alt="Applicant Photo"
+         class="rounded-circle"
+         width="35"
+         height="35">
     <span class="fs-8">{{ application.surname }} {{ application.first_name }} {{ application.other_names }}</span>
 </div>
         <div class="col-md-4"><strong class="fs-8">Gender:</strong> <span class="fs-8">{{ application.gender }}</span></div>
