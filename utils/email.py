@@ -1,32 +1,76 @@
 from flask import current_app, url_for
 import logging
 import requests
+import re
 
-def test_brevo_api_key():
-    """Test if Brevo API key is valid"""
-    try:
-        url = "https://api.brevo.com/v3/account"
-        headers = {
-            "accept": "application/json",
-            "api-key": current_app.config.get("BREVO_API_KEY"),
-            "content-type": "application/json"
-        }
-        
-        response = requests.get(url, headers=headers, timeout=10)
-        
-        if response.status_code == 200:
-            logging.info("Brevo API key is valid")
-            return True
-        else:
-            logging.error(f"Brevo API key invalid: {response.status_code} - {response.text}")
-            return False
-            
-    except Exception as e:
-        logging.error(f"Brevo API key test failed: {str(e)}")
+# Global session for connection reuse
+session = requests.Session()
+session.headers.update({
+    'User-Agent': 'DHI-LMS/1.0'
+})
+
+def validate_email(email):
+    """Validate email format"""
+    pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+    return re.match(pattern, email) is not None
+
+def get_sender_email():
+    """Get validated sender email"""
+    sender = current_app.config.get("MAIL_DEFAULT_SENDER")
+    if not sender or '@' not in sender:
+        logging.error("MAIL_DEFAULT_SENDER not properly configured")
+        return None
+    return sender
+
+def send_email(to_email, subject, body, is_html=True, max_retries=2):
+    """
+    Send email using Brevo HTTPS API with proper error handling and retries.
+    """
+    # Validate inputs
+    if not validate_email(to_email):
+        logging.error(f"Invalid recipient email: {to_email}")
         return False
+    
+    sender = get_sender_email()
+    if not sender:
+        logging.error("No valid sender email configured")
+        return False
+    
+    api_key = current_app.config.get("BREVO_API_KEY")
+    if not api_key:
+        logging.error("BREVO_API_KEY not configured")
+        return False
+    
+    # Test API key once
+    if not hasattr(current_app, '_brevo_key_tested'):
+        if not test_brevo_api_key():
+            logging.error("Brevo API key validation failed")
+            return False
+        current_app._brevo_key_tested = True
+    
+    # Retry logic
+    for attempt in range(max_retries):
+        try:
+            result = _send_via_brevo(to_email, subject, body, sender, is_html)
+            if result:
+                return True
+                
+        except requests.exceptions.RequestException as e:
+            logging.warning(f"Brevo API attempt {attempt + 1} failed: {str(e)}")
+            if attempt < max_retries - 1:
+                continue
+            else:
+                logging.error(f"All {max_retries} attempts failed for {to_email}")
+                return False
+                
+        except Exception as e:
+            logging.error(f"Unexpected error sending to {to_email}: {str(e)}")
+            return False
+    
+    return False
 
-def _send_via_brevo(to_email, subject, body):
-    """Send email using Brevo HTTPS API"""
+def _send_via_brevo(to_email, subject, body, sender, is_html=True):
+    """Send email using Brevo HTTPS API with proper content handling"""
     try:
         url = "https://api.brevo.com/v3/smtp/email"
         
@@ -36,39 +80,60 @@ def _send_via_brevo(to_email, subject, body):
             "content-type": "application/json"
         }
         
+        # Prepare content based on type
+        if is_html:
+            content = {"htmlContent": body}
+        else:
+            content = {"textContent": body}
+        
         payload = {
             "sender": {
-                "email": current_app.config.get("BREVO_DEFAULT_SENDER", "noreply@dhi-online.onrender.com"),
+                "email": sender,
                 "name": "DHI LMS"
             },
             "to": [{"email": to_email}],
             "subject": subject,
-            "htmlContent": body.replace('\n', '<br>')
+            **content
         }
         
-        response = requests.post(url, json=payload, headers=headers, timeout=30)
+        response = session.post(url, json=payload, timeout=10)
         
-        if response.status_code == 201:
-            logging.info(f"Email sent successfully via Brevo to {to_email}")
+        # Handle multiple success codes
+        if response.status_code in [200, 201, 202]:
+            response_data = response.json()
+            message_id = response_data.get('messageId', 'unknown')
+            logging.info(f"Email sent via Brevo to {to_email} - ID: {message_id}")
             return True
+        elif response.status_code == 429:
+            logging.warning(f"Brevo rate limit exceeded for {to_email}")
+            return False
         else:
             logging.error(f"Brevo API error: {response.status_code} - {response.text}")
             return False
             
+    except requests.exceptions.Timeout:
+        logging.error(f"Brevo API timeout for {to_email}")
+        return False
     except Exception as e:
         logging.error(f"Brevo sending failed to {to_email}: {str(e)}")
         return False
 
-
-def _get_sender():
-    """
-    Safely get default sender from config.
-    """
-    return current_app.config.get(
-        'MAIL_DEFAULT_SENDER',
-        'onboarding@resend.dev'  # Use Resend default domain
-    )
-
+def test_brevo_api_key():
+    """Test if Brevo API key is valid"""
+    try:
+        api_key = current_app.config.get("BREVO_API_KEY")
+        if not api_key:
+            return False
+            
+        url = "https://api.brevo.com/v3/account"
+        headers = {"api-key": api_key}
+        
+        response = session.get(url, timeout=5)
+        return response.status_code == 200
+        
+    except Exception as e:
+        logging.error(f"Brevo API key test failed: {str(e)}")
+        return False
 
 def _get_applicant_name(applicant):
     """
@@ -83,27 +148,6 @@ def _get_applicant_name(applicant):
 
     return applicant.email
 
-
-def send_email(to_email, subject, body):
-    """
-    Send email using Brevo HTTPS API.
-    Cloud-friendly, no port blocking issues.
-    """
-    api_key = current_app.config.get("BREVO_API_KEY", "")
-    if not api_key:
-        logging.error("BREVO_API_KEY not configured")
-        return False
-    
-    if not api_key.startswith("xkeysib-"):
-        logging.error("Invalid Brevo API key format. Should start with 'xkeysib-'")
-        return False
-    
-    return _send_via_brevo(to_email, subject, body)
-
-
-# ------------------------------------------------------------------
-# PASSWORD RESET EMAIL
-# ------------------------------------------------------------------
 
 def send_password_reset_email(applicant, token):
     reset_url = url_for(
@@ -237,8 +281,12 @@ def send_approval_credentials_email(applicant, username, student_id, temp_passwo
 """
         total_fees = 0
         for fee in fees_info.get('fees', []):
-            amount = float(fee.get('amount', 0))
-            total_fees += amount
+            try:
+                amount = float(fee.get('amount', 0))
+                total_fees += amount
+            except (ValueError, TypeError):
+                logging.warning(f"Invalid fee amount: {fee.get('amount')}")
+                amount = 0.0
             fees_section += f"""
         <tr>
             <td style="border: 1px solid #ddd; padding: 8px;">{fee.get('description', 'Fee')}</td>
@@ -279,7 +327,7 @@ def send_approval_credentials_email(applicant, username, student_id, temp_passwo
     """
 
     try:
-        return _send_via_brevo(applicant.email, subject, body)
+        return send_email(applicant.email, subject, body)
     except Exception as e:
         logging.error(
             f"Failed to send approval credentials email to {applicant.email}: {str(e)}"
