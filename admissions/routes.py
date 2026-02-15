@@ -530,6 +530,35 @@ def programme():
     application = Application.query.filter_by(applicant_id=session['applicant_id']).first()
 
     if form.validate_on_submit():
+        # Enforce study format logic
+        def validate_study_format(stream_data, choice_programme):
+            """Validate and log study format selection"""
+            if stream_data == 'Regular':
+                logging.info(f"Regular format selected for {choice_programme} - Admissions process only, no LMS features")
+                return True
+            elif stream_data == 'Online':
+                logging.info(f"Online format selected for {choice_programme} - Full LMS access enabled")
+                return True
+            else:
+                logging.error(f"Invalid study format selected: {stream_data}")
+                return False
+        
+        # Validate first choice (required)
+        if not validate_study_format(form.first_stream.data, form.first_choice.data):
+            flash("Invalid study format selected for first choice.", "danger")
+            return render_template('admissions/programme.html', form=form)
+        
+        # Validate second choice (if provided)
+        if form.second_choice.data and not validate_study_format(form.second_stream.data, form.second_choice.data):
+            flash("Invalid study format selected for second choice.", "danger")
+            return render_template('admissions/programme.html', form=form)
+        
+        # Validate third choice (if provided)
+        if form.third_choice.data and not validate_study_format(form.third_stream.data, form.third_choice.data):
+            flash("Invalid study format selected for third choice.", "danger")
+            return render_template('admissions/programme.html', form=form)
+        
+        # Save validated data
         application.first_choice = form.first_choice.data
         application.first_stream = form.first_stream.data
         application.second_choice = form.second_choice.data
@@ -540,6 +569,10 @@ def programme():
         application.sponsor_relation = form.sponsor_relation.data
 
         db.session.commit()
+        
+        # Log study format summary
+        logging.info(f"Study formats saved - 1st: {application.first_stream}, 2nd: {application.second_stream}, 3rd: {application.third_stream}")
+        
         return redirect(url_for('admissions.education'))
 
     if application:

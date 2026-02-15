@@ -30,3 +30,58 @@ def verify_email_code(applicant, submitted_code):
     db.session.commit()
 
     return True, "Email verified successfully."
+
+
+def has_lms_access(study_format):
+    """
+    Check if user has LMS access based on study format.
+    
+    Args:
+        study_format (str): 'Regular' or 'Online'
+    
+    Returns:
+        bool: True if Online format, False if Regular format
+    """
+    return study_format == 'Online'
+
+
+def get_study_format_features(study_format):
+    """
+    Get available features based on study format.
+    
+    Args:
+        study_format (str): 'Regular' or 'Online'
+    
+    Returns:
+        dict: Available features for the format
+    """
+    if study_format == 'Online':
+        return {
+            'lms_access': True,
+            'quizzes': True,
+            'assignments': True,
+            'exams': True,
+            'materials': True,
+            'chat': True,
+            'description': 'Full LMS access with all features'
+        }
+    elif study_format == 'Regular':
+        return {
+            'lms_access': False,
+            'quizzes': False,
+            'assignments': False,
+            'exams': False,
+            'materials': False,
+            'chat': False,
+            'description': 'Admissions process only, no LMS features'
+        }
+    else:
+        return {
+            'lms_access': False,
+            'quizzes': False,
+            'assignments': False,
+            'exams': False,
+            'materials': False,
+            'chat': False,
+            'description': 'Invalid study format'
+        }
