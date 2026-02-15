@@ -41,12 +41,15 @@ def send_email(to_email, subject, body, is_html=True, max_retries=2):
         logging.error("BREVO_API_KEY not configured")
         return False
     
-    # Test API key once
+    # Test API key once per application lifecycle
     if not hasattr(current_app, '_brevo_key_tested'):
-        if not test_brevo_api_key():
-            logging.error("Brevo API key validation failed")
-            return False
+        test_result = test_brevo_api_key()
         current_app._brevo_key_tested = True
+        current_app._brevo_key_valid = test_result
+        
+        if not test_result:
+            logging.error("Brevo API key validation failed - attempting to send anyway")
+            # Don't return False here - try to send anyway
     
     # Retry logic
     for attempt in range(max_retries):
@@ -96,44 +99,82 @@ def _send_via_brevo(to_email, subject, body, sender, is_html=True):
             **content
         }
         
-        response = session.post(url, json=payload, timeout=10)
+        response = session.post(url, json=payload, headers=headers, timeout=10)
         
         # Handle multiple success codes
         if response.status_code in [200, 201, 202]:
             response_data = response.json()
             message_id = response_data.get('messageId', 'unknown')
-            logging.info(f"Email sent via Brevo to {to_email} - ID: {message_id}")
+            logging.info(f"✅ Email sent via Brevo to {to_email} - ID: {message_id}")
             return True
+        elif response.status_code == 401:
+            logging.error(f"❌ Brevo API authentication failed (401) - Check API key")
+            return False
         elif response.status_code == 429:
-            logging.warning(f"Brevo rate limit exceeded for {to_email}")
+            logging.warning(f"⚠️ Brevo rate limit exceeded for {to_email}")
             return False
         else:
-            logging.error(f"Brevo API error: {response.status_code} - {response.text}")
+            logging.error(f"❌ Brevo API error: {response.status_code} - {response.text[:500]}")
             return False
             
     except requests.exceptions.Timeout:
-        logging.error(f"Brevo API timeout for {to_email}")
+        logging.error(f"❌ Brevo API timeout for {to_email}")
+        return False
+    except requests.exceptions.ConnectionError as e:
+        logging.error(f"❌ Brevo connection error for {to_email}: {str(e)}")
         return False
     except Exception as e:
-        logging.error(f"Brevo sending failed to {to_email}: {str(e)}")
+        logging.error(f"❌ Brevo sending failed to {to_email}: {str(e)}")
         return False
 
 def test_brevo_api_key():
-    """Test if Brevo API key is valid"""
+    """Test if Brevo API key is valid with detailed error logging"""
     try:
         api_key = current_app.config.get("BREVO_API_KEY")
         if not api_key:
+            logging.error("❌ BREVO_API_KEY is not configured in environment")
             return False
+        
+        # Log first/last 4 chars for debugging (never log full key)
+        key_preview = f"{api_key[:4]}...{api_key[-4:]}" if len(api_key) > 8 else "***"
+        logging.info(f"🔑 Testing Brevo API key: {key_preview}")
             
         url = "https://api.brevo.com/v3/account"
-        headers = {"api-key": api_key}
+        headers = {
+            "api-key": api_key,
+            "accept": "application/json"
+        }
         
-        response = session.get(url, timeout=5)
-        return response.status_code == 200
+        response = session.get(url, headers=headers, timeout=10)
         
+        if response.status_code == 200:
+            account_info = response.json()
+            email = account_info.get('email', 'N/A')
+            logging.info(f"✅ Brevo API key validation successful - Account: {email}")
+            return True
+        elif response.status_code == 401:
+            logging.error(f"❌ Brevo API key is invalid (401 Unauthorized)")
+            return False
+        elif response.status_code == 403:
+            logging.error(f"❌ Brevo API key lacks required permissions (403 Forbidden)")
+            return False
+        else:
+            logging.warning(f"⚠️ Brevo API key test returned {response.status_code}: {response.text[:200]}")
+            # Don't fail completely on unexpected status codes - allow emails to attempt
+            return True
+        
+    except requests.exceptions.Timeout:
+        logging.warning("⚠️ Brevo API key validation timed out - assuming valid and will retry on actual send")
+        return True  # Don't block emails due to timeout
+    except requests.exceptions.ConnectionError as e:
+        logging.warning(f"⚠️ Brevo API connection error during validation: {str(e)} - assuming valid")
+        return True  # Don't block emails due to network issues
     except Exception as e:
-        logging.error(f"Brevo API key test failed: {str(e)}")
-        return False
+        logging.error(f"❌ Brevo API key test failed with unexpected error: {str(e)}")
+        # Log the full traceback for debugging
+        import traceback
+        logging.error(traceback.format_exc())
+        return True  # Don't block emails due to unexpected errors
 
 def _get_applicant_name(applicant):
     """
@@ -177,7 +218,7 @@ Admissions Office
 Online Admissions Portal
 """
 
-    return send_email(applicant.email, subject, body)
+    return send_email(applicant.email, subject, body, is_html=False)
 
 
 # ------------------------------------------------------------------
@@ -204,7 +245,7 @@ Admissions Office
 Online Admissions Portal
 """
 
-    return send_email(applicant.email, subject, body)
+    return send_email(applicant.email, subject, body, is_html=False)
 
 
 # ------------------------------------------------------------------
@@ -233,7 +274,7 @@ Admissions Office
 Online Admissions Portal
 """
 
-    return send_email(applicant.email, subject, body)
+    return send_email(applicant.email, subject, body, is_html=False)
 
 # ------------------------------------------------------------------
 # APPLICATION COMPLETION EMAIL
@@ -260,7 +301,7 @@ Admissions Office
 Online Admissions Portal
 """
 
-    return send_email(applicant.email, subject, body)
+    return send_email(applicant.email, subject, body, is_html=False)
 
 def send_approval_credentials_email(applicant, username, student_id, temp_password, fees_info=None):
     name = _get_applicant_name(applicant)
@@ -327,7 +368,7 @@ def send_approval_credentials_email(applicant, username, student_id, temp_passwo
     """
 
     try:
-        return send_email(applicant.email, subject, body)
+        return send_email(applicant.email, subject, body, is_html=True)
     except Exception as e:
         logging.error(
             f"Failed to send approval credentials email to {applicant.email}: {str(e)}"
@@ -372,7 +413,7 @@ DHI College of Health & Education
 IT Department
 """
 
-    return send_email(email, subject, body)
+    return send_email(email, subject, body, is_html=False)
 
 
 # ------------------------------------------------------------------
@@ -420,7 +461,7 @@ DHI College of Health & Education
 System Administration
 """
 
-    return send_email(email, subject, body)
+    return send_email(email, subject, body, is_html=False)
 
 
 def send_continuing_student_credentials_email(email, first_name, last_name, username, student_id, index_number, temp_password, programme, level):
@@ -460,4 +501,5 @@ DHI College of Health & Education
 Student Administration
 """
 
-    return send_email(email, subject, body)
+    return send_email(email, subject, body, is_html=False)
+    
