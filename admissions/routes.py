@@ -339,20 +339,20 @@ def purchase_voucher():
                 # Use pre-generated voucher
                 voucher.amount = amount  # update amount if needed
                 voucher.purchaser_email = email
-                **pin** = voucher.pin
-                **serial** = voucher.serial
+                pin = voucher.pin  # Voucher PIN (8 digits)
+                serial = voucher.serial  # Voucher serial (6 chars)
             else:
                 # 2️⃣ Generate a new voucher
-                **pin** = ''.join(random.choices(string.digits, k=8))
-                **serial** = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
+                pin = ''.join(random.choices(string.digits, k=8))  # Voucher PIN
+                serial = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))  # Voucher serial
 
                 voucher = AdmissionVoucher(
-                    **pin**=pin,
-                    **serial**=serial,
-                    **amount**=amount,
+                    pin=pin,  # 8-digit PIN
+                    serial=serial,  # 6-character serial
+                    amount=amount,  # Voucher amount
                     purchaser_email=email,
-                    **valid_until**=datetime.utcnow() + timedelta(days=180),
-                    **is_used**=False
+                    valid_until=datetime.utcnow() + timedelta(days=180),  # 6 months validity
+                    is_used=False  # Mark as unused
                 )
                 db.session.add(voucher)
 
