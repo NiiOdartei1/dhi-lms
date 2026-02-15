@@ -987,12 +987,13 @@ def download_application_pdf():
             }
         ''')
 
-        # Generate PDF with WeasyPrint (correct API)
-        html_doc = HTML(string=html)
-        pdf = html_doc.write_pdf(stylesheets=[css])
+        # Generate PDF with WeasyPrint (alternative approach)
+        from weasyprint import HTML as WeasyHTML
+        html_doc = WeasyHTML(string=html)
+        pdf_data = html_doc.write_pdf(stylesheets=[css])
         
         # Return as downloadable response
-        response = make_response(pdf)
+        response = make_response(pdf_data)
         response.headers['Content-Type'] = 'application/pdf'
         response.headers['Content-Disposition'] = f'attachment; filename=application_{application.id}.pdf'
         return response
