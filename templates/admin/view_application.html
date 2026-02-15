@@ -30,11 +30,21 @@
     <strong class="fs-8">Name:</strong>
     {% if documents|selectattr("document_type","equalto","photo")|list %}
         {% set photo_doc = documents|selectattr("document_type","equalto","photo")|first %}
-        <img src="{{ url_for('static', filename=photo_doc.file_path) }}"
-             alt="Applicant Photo"
-             class="rounded-circle"
-             width="35"
-             height="35">
+        {% if photo_doc and photo_doc.file_path %}
+            <img src="{{ url_for('static', filename=photo_doc.file_path) }}"
+                 alt="Applicant Photo"
+                 class="rounded-circle"
+                 width="35"
+                 height="35"
+                 data-fallback="{{ url_for('static', filename='uploads/profile_pictures/default_avatar.png') }}"
+                 onerror="this.src=this.dataset.fallback;">
+        {% else %}
+            <img src="{{ url_for('static', filename='uploads/profile_pictures/default_avatar.png') }}"
+                 alt="Default Photo"
+                 class="rounded-circle"
+                 width="35"
+                 height="35">
+        {% endif %}
     {% else %}
         <img src="{{ url_for('static', filename='uploads/profile_pictures/default_avatar.png') }}"
              alt="Default Photo"
