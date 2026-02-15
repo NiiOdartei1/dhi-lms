@@ -174,12 +174,15 @@ def resend_verification():
 
     # Generate new verification code
     import random
+    from datetime import datetime, timedelta
     verification_code = str(random.randint(100000, 999999))
     
     # Find applicant and update verification code
     applicant = Applicant.query.filter_by(email=user_email).first()
     if applicant:
-        applicant.verification_code = verification_code
+        applicant.email_verification_code = verification_code
+        applicant.email_verification_expires = datetime.utcnow() + timedelta(minutes=15)
+        applicant.is_email_verified = False
         db.session.commit()
         
         # Send verification email
