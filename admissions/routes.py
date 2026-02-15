@@ -987,44 +987,37 @@ def download_application_pdf():
         # Render HTML template for PDF
         html = render_template('admissions/application_pdf.html', application=application)
         
-        # Create temporary files for WeasyPrint
-        import tempfile
-        import os
+        # OPTION 1: Embed CSS in HTML (Simplest - Recommended)
+        html_with_css = f'''
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="utf-8">
+            <style>{css_content}</style>
+        </head>
+        <body>
+            {html}
+        </body>
+        </html>
+        '''
         
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.html', delete=False) as html_file:
-            html_file.write(html)
-            html_file_path = html_file.name
+        # Generate PDF directly from string
+        from weasyprint import HTML as WeasyHTML
+        pdf_data = WeasyHTML(string=html_with_css).write_pdf()
         
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.css', delete=False) as css_file:
-            css_file.write(css_content)
-            css_file_path = css_file.name
-        
-        try:
-            # Generate PDF using file paths
-            from weasyprint import HTML
-            html_doc = HTML(filename=html_file_path)
-            css_doc = CSS(filename=css_file_path)
-            pdf_data = html_doc.write_pdf(stylesheets=[css_doc])
-            
-            # Return as downloadable response
-            response = make_response(pdf_data)
-            response.headers['Content-Type'] = 'application/pdf'
-            response.headers['Content-Disposition'] = f'attachment; filename=application_{application.id}.pdf'
-            return response
-            
-        finally:
-            # Clean up temporary files
-            try:
-                os.unlink(html_file_path)
-                os.unlink(css_file_path)
-            except:
-                pass
+        # Return as downloadable response
+        response = make_response(pdf_data)
+        response.headers['Content-Type'] = 'application/pdf'
+        response.headers['Content-Disposition'] = f'attachment; filename=application_{application.id}.pdf'
+        return response
 
     except Exception as e:
         logging.error(f"Failed to generate PDF: {str(e)}")
+        import traceback
+        logging.error(traceback.format_exc())
         flash(f"Failed to generate PDF: {str(e)}", "danger")
         return redirect(url_for('admissions.dashboard'))
-
+        
 # =====================================================
 @admissions_bp.route('/application/pay-fees', methods=['GET', 'POST'])
 @applicant_login_required
