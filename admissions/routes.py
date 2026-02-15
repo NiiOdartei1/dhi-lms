@@ -4,7 +4,7 @@ import json
 import logging
 import os, random, string
 from flask import (Blueprint, current_app, render_template, redirect, request, url_for, flash, session, make_response)
-import pdfkit
+from weasyprint import HTML, CSS
 from models import ProgrammeFeeStructure
 from utils.email import send_email, send_application_completed_email, send_email_verification
 from utils.security import verify_email_code
@@ -21,13 +21,6 @@ from datetime import datetime, timedelta
 # Blueprint
 # =====================================================
 admissions_bp = Blueprint('admissions', __name__, template_folder='templates', static_folder='static', static_url_path="/admissions/static", url_prefix='/admissions')
-
-# Initialize pdfkit configuration with error handling
-try:
-    PDFKIT_CONFIG = pdfkit.configuration()
-except Exception as e:
-    print(f"Warning: wkhtmltopdf not found. PDF generation will be disabled. Error: {e}")
-    PDFKIT_CONFIG = None
 
 # =====================================================
 # Applicant login required decorator
@@ -880,22 +873,117 @@ def download_application_pdf():
     html = render_template('admissions/application_pdf.html', application=application)
 
     try:
-        # Check if pdfkit is available
-        if PDFKIT_CONFIG is None:
-            flash("PDF generation is not available. Please install wkhtmltopdf.", "danger")
-            return redirect(url_for('admissions.dashboard'))
+        # Modern CSS styling for colorful PDF
+        css = CSS(string='''
+            @page {
+                size: A4;
+                margin: 2cm;
+                @bottom-center {
+                    content: counter(page);
+                    font-size: 10pt;
+                    color: #666;
+                }
+            }
             
-        # Generate PDF
-        pdf = pdfkit.from_string(html, False, configuration=PDFKIT_CONFIG, options={
-            'enable-local-file-access': None,  # allow local images/css
-            'page-size': 'A4',
-            'margin-top': '10mm',
-            'margin-bottom': '10mm',
-            'margin-left': '10mm',
-            'margin-right': '10mm',
-            'encoding': "UTF-8"
-        })
+            body {
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                line-height: 1.6;
+                color: #333;
+                background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            }
+            
+            .header {
+                background: linear-gradient(45deg, #2c3e50, #3498db);
+                color: white;
+                padding: 20px;
+                border-radius: 10px;
+                text-align: center;
+                margin-bottom: 30px;
+                box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            }
+            
+            .header h1 {
+                margin: 0;
+                font-size: 28px;
+                font-weight: 300;
+                text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+            }
+            
+            .section {
+                background: white;
+                padding: 25px;
+                margin-bottom: 20px;
+                border-radius: 8px;
+                box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+                border-left: 4px solid #3498db;
+            }
+            
+            .section h2 {
+                color: #2c3e50;
+                border-bottom: 2px solid #3498db;
+                padding-bottom: 10px;
+                margin-top: 0;
+            }
+            
+            .info-grid {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 15px;
+                margin: 20px 0;
+            }
+            
+            .info-item {
+                background: #f8f9fa;
+                padding: 15px;
+                border-radius: 6px;
+                border-left: 3px solid #28a745;
+            }
+            
+            .info-label {
+                font-weight: bold;
+                color: #495057;
+                margin-bottom: 5px;
+            }
+            
+            .info-value {
+                color: #212529;
+                font-size: 14px;
+            }
+            
+            .status-approved {
+                background: linear-gradient(45deg, #28a745, #20c997);
+                color: white;
+                padding: 10px 20px;
+                border-radius: 20px;
+                font-weight: bold;
+                text-align: center;
+                display: inline-block;
+            }
+            
+            .status-pending {
+                background: linear-gradient(45deg, #ffc107, #fd7e14);
+                color: white;
+                padding: 10px 20px;
+                border-radius: 20px;
+                font-weight: bold;
+                text-align: center;
+                display: inline-block;
+            }
+            
+            .footer {
+                text-align: center;
+                margin-top: 40px;
+                padding: 20px;
+                background: #2c3e50;
+                color: white;
+                border-radius: 8px;
+            }
+        ''')
 
+        # Generate PDF with WeasyPrint
+        html_doc = HTML(string=html)
+        pdf = html_doc.write_pdf(stylesheets=[css])
+        
         # Return as downloadable response
         response = make_response(pdf)
         response.headers['Content-Type'] = 'application/pdf'
@@ -903,6 +991,7 @@ def download_application_pdf():
         return response
 
     except Exception as e:
+        logging.error(f"Failed to generate PDF: {str(e)}")
         flash(f"Failed to generate PDF: {str(e)}", "danger")
         return redirect(url_for('admissions.dashboard'))
 
