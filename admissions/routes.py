@@ -873,7 +873,7 @@ def download_application_pdf():
     html = render_template('admissions/application_pdf.html', application=application)
 
     try:
-        # Modern CSS styling for colorful PDF
+        # Modern CSS styling for colorful PDF (WeasyPrint compatible)
         css = CSS(string='''
             @page {
                 size: A4;
@@ -889,24 +889,22 @@ def download_application_pdf():
                 font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
                 line-height: 1.6;
                 color: #333;
-                background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+                background: #f5f7fa;
             }
             
             .header {
-                background: linear-gradient(45deg, #2c3e50, #3498db);
+                background: #2c3e50;
                 color: white;
                 padding: 20px;
                 border-radius: 10px;
                 text-align: center;
                 margin-bottom: 30px;
-                box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
             }
             
             .header h1 {
                 margin: 0;
                 font-size: 28px;
                 font-weight: 300;
-                text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
             }
             
             .section {
@@ -914,7 +912,6 @@ def download_application_pdf():
                 padding: 25px;
                 margin-bottom: 20px;
                 border-radius: 8px;
-                box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
                 border-left: 4px solid #3498db;
             }
             
@@ -926,17 +923,27 @@ def download_application_pdf():
             }
             
             .info-grid {
-                display: grid;
-                grid-template-columns: 1fr 1fr;
-                gap: 15px;
+                display: table;
+                width: 100%;
                 margin: 20px 0;
             }
             
+            .info-row {
+                display: table-row;
+            }
+            
             .info-item {
+                display: table-cell;
                 background: #f8f9fa;
                 padding: 15px;
                 border-radius: 6px;
                 border-left: 3px solid #28a745;
+                width: 50%;
+                vertical-align: top;
+            }
+            
+            .info-item:first-child {
+                margin-right: 15px;
             }
             
             .info-label {
@@ -951,7 +958,7 @@ def download_application_pdf():
             }
             
             .status-approved {
-                background: linear-gradient(45deg, #28a745, #20c997);
+                background: #28a745;
                 color: white;
                 padding: 10px 20px;
                 border-radius: 20px;
@@ -961,7 +968,7 @@ def download_application_pdf():
             }
             
             .status-pending {
-                background: linear-gradient(45deg, #ffc107, #fd7e14);
+                background: #ffc107;
                 color: white;
                 padding: 10px 20px;
                 border-radius: 20px;
@@ -980,7 +987,7 @@ def download_application_pdf():
             }
         ''')
 
-        # Generate PDF with WeasyPrint
+        # Generate PDF with WeasyPrint (correct API)
         html_doc = HTML(string=html)
         pdf = html_doc.write_pdf(stylesheets=[css])
         
