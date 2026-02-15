@@ -67,22 +67,10 @@ class Config:
     )
 
     # ------------------------------------------------------
-    # EMAIL CONFIGURATION (BREVO SMTP)
+    # EMAIL CONFIGURATION (BREVO HTTPS API)
     # ------------------------------------------------------
     BREVO_API_KEY = os.environ.get("BREVO_API_KEY", "")
-    BREVO_SMTP_KEY = os.environ.get("BREVO_SMTP_KEY", "")
-    BREVO_SENDER_EMAIL = os.environ.get("BREVO_SENDER_EMAIL", "noreply@dhi-online.onrender.com")
-    
-    # Keep Gmail as fallback (optional)
-    MAIL_SERVER = "smtp.gmail.com"
-    MAIL_PORT = 587
-    MAIL_USE_TLS = True
-    MAIL_USE_SSL = False
-    MAIL_USERNAME = os.environ.get("MAIL_USERNAME", "lampteyjoseph860@gmail.com")
-    MAIL_PASSWORD = os.environ.get("MAIL_PASSWORD", "injjjivjdnlqtlum")
-    
-    # Default sender for compatibility
-    MAIL_DEFAULT_SENDER = "DHI LMS <noreply@dhi-online.onrender.com>"
+    BREVO_DEFAULT_SENDER = os.environ.get("BREVO_DEFAULT_SENDER", "noreply@dhi-online.onrender.com")
 
     # ------------------------------------------------------
     # ZOOM (OPTIONAL)

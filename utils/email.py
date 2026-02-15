@@ -26,7 +26,7 @@ def test_brevo_api_key():
         return False
 
 def _send_via_brevo(to_email, subject, body):
-    """Send email using Brevo SMTP API"""
+    """Send email using Brevo HTTPS API"""
     try:
         url = "https://api.brevo.com/v3/smtp/email"
         
@@ -38,7 +38,7 @@ def _send_via_brevo(to_email, subject, body):
         
         payload = {
             "sender": {
-                "email": current_app.config.get("BREVO_SENDER_EMAIL", "noreply@dhi-online.onrender.com"),
+                "email": current_app.config.get("BREVO_DEFAULT_SENDER", "noreply@dhi-online.onrender.com"),
                 "name": "DHI LMS"
             },
             "to": [{"email": to_email}],
@@ -86,15 +86,10 @@ def _get_applicant_name(applicant):
 
 def send_email(to_email, subject, body):
     """
-    Send email using Brevo SMTP API.
-    Cloud-friendly, reliable, works for all email addresses.
+    Send email using Brevo HTTPS API.
+    Cloud-friendly, no port blocking issues.
     """
-    # Debug: Log environment variables
     api_key = current_app.config.get("BREVO_API_KEY", "")
-    logging.info(f"DEBUG: BREVO_API_KEY configured: {bool(api_key)}")
-    logging.info(f"DEBUG: BREVO_API_KEY length: {len(api_key)}")
-    logging.info(f"DEBUG: BREVO_API_KEY starts with xkeysib: {api_key.startswith('xkeysib-')}")
-    
     if not api_key:
         logging.error("BREVO_API_KEY not configured")
         return False
