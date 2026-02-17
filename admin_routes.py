@@ -7775,9 +7775,40 @@ def edit_fee_group(group_id):
 @login_required
 def delete_fee(fee_id):
     group = ProgrammeFeeStructure.query.get_or_404(fee_id)
-    db.session.delete(group)
-    db.session.commit()
-    flash("Fee group deleted successfully.", "success")
+    
+    try:
+        # Check for related student fee balance records
+        student_balances = StudentFeeBalance.query.filter_by(fee_structure_id=fee_id).all()
+        
+        if student_balances:
+            # Delete related student fee balance records
+            balance_count = len(student_balances)
+            for balance in student_balances:
+                db.session.delete(balance)
+            
+            # Also delete any related transactions
+            from models import StudentFeeTransaction
+            transactions = StudentFeeTransaction.query.filter_by(fee_structure_id=fee_id).all()
+            for txn in transactions:
+                db.session.delete(txn)
+            
+            # Now delete the fee group
+            db.session.delete(group)
+            db.session.commit()
+            flash(f"Fee group and {balance_count} related student balance records deleted successfully.", "success")
+        else:
+            # No related records, safe to delete
+            db.session.delete(group)
+            db.session.commit()
+            flash("Fee group deleted successfully.", "success")
+            
+    except Exception as e:
+        db.session.rollback()
+        if "foreign key constraint" in str(e).lower():
+            flash("Cannot delete fee group: It is referenced by student fee records. Please delete student records first or contact administrator.", "danger")
+        else:
+            flash(f"Error deleting fee group: {str(e)}", "danger")
+            
     return redirect(url_for('admin.assign_fees'))
 
 
@@ -7787,13 +7818,37 @@ def delete_fee_group(group_id):
     group = ProgrammeFeeStructure.query.get_or_404(group_id)
 
     try:
-        db.session.delete(group)
-        db.session.commit()
-        flash("Fee group deleted successfully.", "success")
+        # Check for related student fee balance records
+        student_balances = StudentFeeBalance.query.filter_by(fee_structure_id=group_id).all()
+        
+        if student_balances:
+            # Option 1: Delete related student fee balance records (clean approach)
+            balance_count = len(student_balances)
+            for balance in student_balances:
+                db.session.delete(balance)
+            
+            # Also delete any related transactions
+            from models import StudentFeeTransaction
+            transactions = StudentFeeTransaction.query.filter_by(fee_structure_id=group_id).all()
+            for txn in transactions:
+                db.session.delete(txn)
+            
+            # Now delete the fee group
+            db.session.delete(group)
+            db.session.commit()
+            flash(f"Fee group and {balance_count} related student balance records deleted successfully.", "success")
+        else:
+            # No related records, safe to delete
+            db.session.delete(group)
+            db.session.commit()
+            flash("Fee group deleted successfully.", "success")
 
     except Exception as e:
         db.session.rollback()
-        flash(f"Error deleting fee group: {str(e)}", "danger")
+        if "foreign key constraint" in str(e).lower():
+            flash("Cannot delete fee group: It is referenced by student fee records. Please delete student records first or contact administrator.", "danger")
+        else:
+            flash(f"Error deleting fee group: {str(e)}", "danger")
 
     return redirect(url_for('admin.assign_fees'))
 
