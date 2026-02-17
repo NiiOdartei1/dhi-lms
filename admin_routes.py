@@ -7676,8 +7676,16 @@ def edit_fee_group(group_id):
     
     # Get percentage settings for the fee group's academic year
     group_academic_year = group.academic_year if group else str(datetime.now().year)
+    print(f"DEBUG: Fee group academic_year: {group_academic_year}")
     current_settings = FeePercentageSettings.get_active_settings(group_academic_year)
+    print(f"DEBUG: Retrieved current_settings: {current_settings}")
+    if current_settings:
+        print(f"DEBUG: Settings details - percentage: {current_settings.base_payment_percentage}, deadline: {current_settings.base_payment_deadline}, installments: {current_settings.allow_installments_after_base}")
     if request.method == 'POST':
+        # Debug: Print all form data
+        print(f"DEBUG: Form data received: {dict(request.form)}")
+        print(f"DEBUG: save_percentage_settings value: {request.form.get('save_percentage_settings')}")
+        
         # Handle percentage settings form
         if request.form.get('save_percentage_settings'):
             academic_year = request.form.get('academic_year')
@@ -7692,8 +7700,10 @@ def edit_fee_group(group_id):
                 return redirect(url_for('admin.edit_fee_group', group_id=group_id))
             # Check if settings exist for this academic year
             existing_settings = FeePercentageSettings.get_active_settings(academic_year)
+            print(f"DEBUG: Existing settings found: {existing_settings}")
             if existing_settings:
                 # Update existing settings
+                print(f"DEBUG: Updating existing settings with: percentage={base_percentage}, deadline={deadline}")
                 existing_settings.base_payment_percentage = base_percentage
                 existing_settings.base_payment_deadline = deadline
                 existing_settings.allow_installments_after_base = allow_installments
@@ -7701,6 +7711,7 @@ def edit_fee_group(group_id):
                 existing_settings.updated_at = datetime.utcnow()
             else:
                 # Create new settings
+                print(f"DEBUG: Creating new settings with: academic_year={academic_year}, percentage={base_percentage}, deadline={deadline}")
                 new_settings = FeePercentageSettings(
                     base_payment_percentage=base_percentage,
                     base_payment_deadline=deadline,
@@ -7710,7 +7721,9 @@ def edit_fee_group(group_id):
                 )
                 db.session.add(new_settings)
 
+            print(f"DEBUG: Committing to database...")
             db.session.commit()
+            print(f"DEBUG: Database commit completed")
             flash("✓ Fee percentage settings saved successfully!", "success")
             return redirect(url_for('admin.edit_fee_group', group_id=group_id))
 
