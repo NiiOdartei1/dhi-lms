@@ -7727,35 +7727,36 @@ def edit_fee_group(group_id):
             flash("✓ Fee percentage settings saved successfully!", "success")
             return redirect(url_for('admin.edit_fee_group', group_id=group_id))
 
-        # Handle regular fee group form
-        group.programme_name = request.form.get('programme_name')
-        group.programme_level = request.form.get('programme_level')  # Fix: use programme_level not class_level
-        group.study_format = request.form.get('study_format')
+        # If this is the main fee group form (not percentage settings), handle fee group update
+        if not request.form.get('save_percentage_settings'):
+            group.programme_name = request.form.get('programme_name')
+            group.programme_level = request.form.get('programme_level')  # Fix: use programme_level not class_level
+            group.study_format = request.form.get('study_format')
 
-        # Keep single year format
-        academic_year_obj = AcademicYear.query.get(request.form.get('academic_year'))
-        group.academic_year = str(academic_year_obj.start_date.year) if academic_year_obj else str(datetime.now().year)
+            # Keep single year format
+            academic_year_obj = AcademicYear.query.get(request.form.get('academic_year'))
+            group.academic_year = str(academic_year_obj.start_date.year) if academic_year_obj else str(datetime.now().year)
 
-        group.semester = request.form.get('semester')
-        group.description = request.form.get('group_title') or group.description
+            group.semester = request.form.get('semester')
+            group.description = request.form.get('group_title') or group.description
 
-        descriptions = request.form.getlist('description[]')
-        amounts = request.form.getlist('amount[]')
-        items = []
-        total = 0.0
+            descriptions = request.form.getlist('description[]')
+            amounts = request.form.getlist('amount[]')
+            items = []
+            total = 0.0
 
-        for desc, amt in zip(descriptions, amounts):
-            amt_f = float(amt or 0)
-            items.append({'description': desc.strip(), 'amount': round(amt_f, 2)})
-            total += amt_f
+            for desc, amt in zip(descriptions, amounts):
+                amt_f = float(amt or 0)
+                items.append({'description': desc.strip(), 'amount': round(amt_f, 2)})
+                total += amt_f
 
-        group.items = json.dumps(items)
-        group.amount = round(total, 2)
+            group.items = json.dumps(items)
+            group.amount = round(total, 2)
 
-        db.session.commit()
+            db.session.commit()
 
-        flash("Fee group updated successfully.", "success")
-        return redirect(url_for('admin.assign_fees'))
+            flash("Fee group updated successfully.", "success")
+            return redirect(url_for('admin.assign_fees'))
 
     group_items = json.loads(group.items or '[]')
     return render_template(
