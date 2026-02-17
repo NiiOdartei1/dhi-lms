@@ -7665,25 +7665,18 @@ def bulk_assign_fees(programme_name, level, study_format, fee_structure_id):
 
 
 @admin_bp.route('/edit-fee-group/<int:group_id>', methods=['GET', 'POST'])
-
 @login_required
-
 def edit_fee_group(group_id):
-
     if not current_user.is_admin:
-
         flash("Unauthorized", "danger")
-
         return redirect(url_for('main.index'))
-
     group = ProgrammeFeeStructure.query.get_or_404(group_id)
     academic_years = AcademicYear.query.order_by(AcademicYear.start_date.desc()).all()
     CLASS_LEVELS = ['100 Level', '200 Level', '300 Level', '400 Level']
-
-    # Get current percentage settings
-    current_year = str(datetime.now().year)
-    current_settings = FeePercentageSettings.get_active_settings(current_year)
-
+    
+    # Get percentage settings for the fee group's academic year
+    group_academic_year = group.academic_year if group else str(datetime.now().year)
+    current_settings = FeePercentageSettings.get_active_settings(group_academic_year)
     if request.method == 'POST':
         # Handle percentage settings form
         if request.form.get('save_percentage_settings'):
@@ -7692,16 +7685,13 @@ def edit_fee_group(group_id):
             deadline_str = request.form.get('base_payment_deadline')
             allow_installments = 'allow_installments_after_base' in request.form
             description = request.form.get('description', '')
-
             if deadline_str:
                 deadline = datetime.strptime(deadline_str, '%Y-%m-%d').date()
             else:
                 flash("Base payment deadline is required.", "danger")
                 return redirect(url_for('admin.edit_fee_group', group_id=group_id))
-
             # Check if settings exist for this academic year
             existing_settings = FeePercentageSettings.get_active_settings(academic_year)
-
             if existing_settings:
                 # Update existing settings
                 existing_settings.base_payment_percentage = base_percentage
@@ -7729,401 +7719,214 @@ def edit_fee_group(group_id):
         group.programme_level = request.form.get('programme_level')  # Fix: use programme_level not class_level
         group.study_format = request.form.get('study_format')
 
-        
-
         # Keep single year format
-
         academic_year_obj = AcademicYear.query.get(request.form.get('academic_year'))
-
         group.academic_year = str(academic_year_obj.start_date.year) if academic_year_obj else str(datetime.now().year)
 
-        
-
         group.semester = request.form.get('semester')
-
         group.description = request.form.get('group_title') or group.description
 
-
-
         descriptions = request.form.getlist('description[]')
-
         amounts = request.form.getlist('amount[]')
-
         items = []
-
         total = 0.0
 
         for desc, amt in zip(descriptions, amounts):
-
             amt_f = float(amt or 0)
-
             items.append({'description': desc.strip(), 'amount': round(amt_f, 2)})
-
             total += amt_f
 
-
-
         group.items = json.dumps(items)
-
         group.amount = round(total, 2)
-
-
 
         db.session.commit()
 
         flash("Fee group updated successfully.", "success")
-
         return redirect(url_for('admin.assign_fees'))
 
-
-
     group_items = json.loads(group.items or '[]')
-
     return render_template(
-
         'admin/edit_fee_group.html',
-
         group=group,
-
         group_items=group_items,
-
         academic_years=academic_years,
-
         CLASS_LEVELS=CLASS_LEVELS,
-
         STUDY_FORMATS=STUDY_FORMATS,
-
         CERTIFICATE_PROGRAMMES=CERTIFICATE_PROGRAMMES,
-
-        DIPLOMA_PROGRAMMES=DIPLOMA_PROGRAMMES
-
+        DIPLOMA_PROGRAMMES=DIPLOMA_PROGRAMMES,
+        current_settings=current_settings
     )
 
-
-
 @admin_bp.route('/delete-fee/<int:fee_id>', methods=['POST'])
-
 @login_required
-
 def delete_fee(fee_id):
-
     group = ProgrammeFeeStructure.query.get_or_404(fee_id)
-
     db.session.delete(group)
-
     db.session.commit()
-
     flash("Fee group deleted successfully.", "success")
-
     return redirect(url_for('admin.assign_fees'))
-
 
 
 @admin_bp.route('/admin/fees/group/<int:group_id>/delete', methods=['POST'])
-
 @login_required
-
 def delete_fee_group(group_id):
-
     group = ProgrammeFeeStructure.query.get_or_404(group_id)
 
-
-
     try:
-
         db.session.delete(group)
-
         db.session.commit()
-
         flash("Fee group deleted successfully.", "success")
 
     except Exception as e:
-
         db.session.rollback()
-
         flash(f"Error deleting fee group: {str(e)}", "danger")
 
-
-
     return redirect(url_for('admin.assign_fees'))
-
 
 
 @admin_bp.route('/mark_fee_paid/<int:fee_id>', methods=['POST'])
-
 @login_required
-
 def mark_fee_paid(fee_id):
-
     fee = StudentFeeBalance.query.get_or_404(fee_id)
 
-
-
     if fee.is_paid: 
-
         flash("This fee is already marked as paid.", "info")
-
     else:
-
         fee.is_paid = True
-
         fee.paid_on = datetime.utcnow()
-
         db.session.commit()
-
         flash("Fee marked as paid successfully.", "success")
-
-
 
     return redirect(url_for('admin.assign_fees'))
 
 
-
 @admin_bp.route('/review-payments')
-
 @login_required
-
 @require_finance_admin
-
 def review_payments():
-
     """Review pending payments for approval or rejection"""
-
     try:
-
         status_filter = request.args.get('status', 'pending')
-
         query = StudentFeeTransaction.query
 
-        
-
         if status_filter in ['pending', 'approved', 'rejected']:
-
             query = query.filter_by(is_approved=(status_filter == 'approved'))
 
-        
-
         transactions = query.order_by(StudentFeeTransaction.timestamp.desc()).all()
-
         
-
         return render_template(
-
             'admin/review_payments.html',
-
             transactions=transactions,
-
             status_filter=status_filter
-
         )
-
     except Exception as e:
-
         logger.exception(f"Error reviewing payments: {e}")
-
         abort(500)
-
-
-
 
 
 from sqlalchemy.exc import IntegrityError
 
-
-
 @admin_bp.route('/approve-payment/<int:txn_id>', methods=['POST'])
-
 @login_required
-
 def approve_payment(txn_id):
-
     """Approve a fee payment and update student balance (robust tertiary version)."""
-
     txn = StudentFeeTransaction.query.get_or_404(txn_id)
 
-
-
     if getattr(txn, 'is_approved', False):
-
         flash("Already approved", "warning")
-
         return redirect(url_for('admin.review_payments'))
 
-
-
     try:
-
         # mark transaction approved
-
         txn.is_approved = True
-
         txn.reviewed_by_admin_id = current_user.id
-
         if hasattr(txn, 'reviewed_at'):
-
             txn.reviewed_at = datetime.utcnow()
 
-
-
         # Resolve student and canonical student_user_id (string STDxxx)
-
         student = getattr(txn, 'student', None)
-
         if not student:
-
             # txn.student_id might be integer id — try to resolve
-
             student = User.query.get(txn.student_id)
-
         if not student:
-
             flash("Student record not found for this transaction.", "danger")
-
             db.session.rollback()
-
             return redirect(url_for('admin.review_payments'))
-
-
 
         student_user_id = getattr(student, 'user_id', None) or str(getattr(student, 'id', None))
 
-
-
         # Try to find an existing balance by student + year + semester first (best effort)
-
         balance = StudentFeeBalance.query.filter_by(
-
             student_id=student_user_id,
-
             academic_year=txn.academic_year,
-
             semester=txn.semester
-
         ).first()
 
-
-
         fee_structure = None
-
         if not balance:
-
             # No existing balance for that year/semester — try to find matching ProgrammeFeeStructure
-
             profile = getattr(student, 'student_profile', None)
-
             programme_name = getattr(profile, 'current_programme', None) if profile else None
-
             programme_level = getattr(profile, 'programme_level', None) if profile else None
-
             study_format = getattr(profile, 'study_format', None) if profile else None
 
-
-
             def normalize_level(level):
-
                 if level is None:
-
                     return None
-
                 try:
-
                     return str(int(level))
-
                 except Exception:
-
                     return str(level)
-
-
 
             programme_level_str = normalize_level(programme_level)
 
-
-
             if programme_name and programme_level_str:
-
                 # try the standard column names
-
                 fee_structure = ProgrammeFeeStructure.query.filter_by(
-
                     programme_name=programme_name,
-
                     programme_level=programme_level_str,
-
                     study_format=study_format or 'Regular',
-
                     academic_year=txn.academic_year,
-
                     semester=txn.semester
-
                 ).first()
-
-
 
             # If found, try to reuse or create balance tied to that fee_structure
-
             if fee_structure:
-
                 # prefer to find existing balance by (student_id, fee_structure_id)
-
                 balance = StudentFeeBalance.query.filter_by(
-
                     student_id=student_user_id,
-
                     fee_structure_id=fee_structure.id
-
                 ).first()
 
-
-
                 if not balance:
-
                     # create new balance for the fee_structure
-
                     balance = StudentFeeBalance(
-
                         student_id=student_user_id,
-
                         fee_structure_id=fee_structure.id,
-
                         programme_name=fee_structure.programme_name,
-
                         programme_level=fee_structure.programme_level,
-
                         study_format=fee_structure.study_format if hasattr(fee_structure, 'study_format') else 'Regular',
-
                         academic_year=txn.academic_year,
-
                         semester=txn.semester,
-
                         amount_due=fee_structure.amount or 0.0,
-
                         amount_paid=0.0,
-
                         is_paid=False
-
                     )
-
                     db.session.add(balance)
-
                     try:
-
                         db.session.flush()  # might raise IntegrityError if another process created the same row
-
                     except IntegrityError:
                         db.session.rollback()
                         # re-query the existing balance (concurrent insert raced us)
                         balance = StudentFeeBalance.query.filter_by(
                             student_id=student_user_id,
                             fee_structure_id=fee_structure.id
-
                         ).first()
                         if not balance:
-
                             # Very odd — re-raise after logging
                             logging.exception("Failed to create StudentFeeBalance and couldn't find existing one.")
                             flash("System error creating student balance; contact admin.", "danger")
                             return redirect(url_for('admin.review_payments'))
-
             else:
                 # No fee structure and no existing balance found.
                 # We will not create a new (unlinked) balance because fee_structure_id is required.
