@@ -2899,7 +2899,7 @@ class AttendanceRecord(db.Model):
     student = db.relationship('User')
     teacher = db.relationship('TeacherProfile')
     course = db.relationship('Course')
-    
+
 
 class AcademicCalendar(db.Model):
 
@@ -2918,175 +2918,94 @@ class AcademicCalendar(db.Model):
 
 
 class AcademicYear(db.Model):
-
     __tablename__ = 'academic_year'
-
     id = db.Column(db.Integer, primary_key=True)
-
     start_date = db.Column(db.Date, nullable=False)
-
     end_date = db.Column(db.Date, nullable=False)
-
     semester_1_start = db.Column(db.Date, nullable=False)
-
     semester_1_end = db.Column(db.Date, nullable=False)
-
     semester_2_start = db.Column(db.Date, nullable=False)
-
     semester_2_end = db.Column(db.Date, nullable=False)
 
 
-
 class AppointmentSlot(db.Model):
-
     __tablename__ = 'appointment_slot'
-
     id = db.Column(db.Integer, primary_key=True)
-
     teacher_id = db.Column(db.Integer, db.ForeignKey('teacher_profile.id'), nullable=False)
-
     date = db.Column(db.Date, nullable=False)
-
     start_time = db.Column(db.Time, nullable=False)
-
     end_time = db.Column(db.Time, nullable=False)
-
     is_booked = db.Column(db.Boolean, default=False, nullable=False)
 
-
-
     teacher = db.relationship('TeacherProfile', back_populates='slots')
-
     booking = db.relationship('AppointmentBooking', back_populates='slot', uselist=False)
 
 
-
 class AppointmentBooking(db.Model):
-
     __tablename__ = 'appointment_booking'
-
     id = db.Column(db.Integer, primary_key=True)
-
     student_id = db.Column(db.Integer, db.ForeignKey('student_profile.id'), nullable=False)
-
     slot_id = db.Column(db.Integer, db.ForeignKey('appointment_slot.id'), nullable=False)
-
     status = db.Column(db.String(20), default='pending', nullable=False)  # pending, approved, declined, rescheduled
-
     note = db.Column(db.Text)
-
     requested_on = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
 
 
-
     student = db.relationship('StudentProfile', back_populates='bookings')
-
     slot = db.relationship('AppointmentSlot', back_populates='booking')
 
 
-
-
-
 # ============================
-
 # Exam-related models
-
 # ============================
-
 class Exam(db.Model):
-
     __tablename__ = 'exams'
-
     id = db.Column(db.Integer, primary_key=True)
-
     course_id = db.Column(db.Integer, db.ForeignKey('course.id'), nullable=False)
-
     title = db.Column(db.String(255), nullable=False)
-
     description = db.Column(db.Text, nullable=True)
-
     programme_level = db.Column(db.String(50), nullable=False)  # "100", "200", "300", "400"
-
     programme_name = db.Column(db.String(120), nullable=True)  # Optional
-
     duration_minutes = db.Column(db.Integer, nullable=True)
-
     start_datetime = db.Column(db.DateTime, nullable=False)
-
     end_datetime = db.Column(db.DateTime, nullable=False)
-
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
-
     assignment_mode = db.Column(db.String(20), default='random', nullable=False)
-
     assignment_seed = db.Column(db.String(255), nullable=True)
-
     
-
     questions = db.relationship('ExamQuestion', backref='exam', cascade="all, delete-orphan")
-
     sets = db.relationship("ExamSet", backref="exam", cascade="all, delete-orphan")
-
     submissions = db.relationship('ExamSubmission', backref='exam', cascade="all, delete-orphan")
-
     course = db.relationship('Course', backref='exams')
 
-
-
     def __repr__(self):
-
         return f"<Exam {self.title} Level {self.programme_level}>"
 
-
-
     @hybrid_property
-
     def max_score(self):
-
         return sum(q.marks for q in self.questions or [])
 
-    
 
 class ExamSet(db.Model):
-
     __tablename__ = "exam_sets"
-
     id = db.Column(db.Integer, primary_key=True)
-
     name = db.Column(db.String(50), nullable=False)
-
     exam_id = db.Column(db.Integer, db.ForeignKey("exams.id"), nullable=False)
-
     max_score = db.Column(db.Float, nullable=True)
-
     access_password = db.Column(db.String(128), nullable=True)
-
-
 
     set_questions = db.relationship("ExamSetQuestion", backref="set", cascade="all, delete-orphan")
 
-
-
     @property
-
     def password(self):
-
         return self.access_password
 
-
-
     def __repr__(self):
-
         return f"<ExamSet {self.name} of Exam {self.exam_id}>"
 
-
-
     @property
-
     def computed_max_score(self):
-
         return sum(q.question.marks or 0 for q in self.set_questions)
-
 
 
 class ExamQuestion(db.Model):

@@ -8318,7 +8318,13 @@ def assessment_periods():
     periods = TeacherAssessmentPeriod.query.order_by(
         TeacherAssessmentPeriod.created_at.desc()
     ).all()
-
+    
+    # Calculate statistics for each period
+    for period in periods:
+        assessments = TeacherAssessment.query.filter_by(period_id=period.id).all()
+        period.assessment_count = len(assessments)
+        period.student_count = len(set(a.student_id for a in assessments))
+    
     return render_template(
         'admin/teacher_assessment_periods.html',
         periods=periods
@@ -8361,6 +8367,83 @@ def add_assessment_period():
         return redirect(url_for('admin.assessment_periods'))
 
     return render_template('admin/teacher_assessment_period_form.html')
+
+
+@admin_bp.route('/teacher-assessment/periods/<int:pid>/results')
+@login_required
+def assessment_period_results(pid):
+    if not current_user.is_admin:
+        abort(403)
+    
+    period = TeacherAssessmentPeriod.query.get_or_404(pid)
+    
+    # Get all assessments for this period
+    assessments = TeacherAssessment.query.filter_by(period_id=pid).all()
+    
+    # Calculate statistics
+    total_assessments = len(assessments)
+    unique_students = len(set(a.student_id for a in assessments))
+    unique_teachers = len(set(a.teacher_id for a in assessments))
+    
+    # Average ratings (assuming 1-5 scale)
+    avg_rating = 0
+    if assessments:
+        # Calculate average from answers (you may need to adjust based on your rating system)
+        ratings = []
+        for assessment in assessments:
+            answers = TeacherAssessmentAnswer.query.filter_by(assessment_id=assessment.id).all()
+            for answer in answers:
+                # Assuming answers have a score/rating field
+                if hasattr(answer, 'score') and answer.score:
+                    ratings.append(float(answer.score))
+        avg_rating = sum(ratings) / len(ratings) if ratings else 0
+    
+    # Teacher performance breakdown
+    teacher_stats = {}
+    for assessment in assessments:
+        teacher_id = assessment.teacher_id
+        if teacher_id not in teacher_stats:
+            teacher_stats[teacher_id] = {
+                'name': assessment.teacher_name if hasattr(assessment, 'teacher_name') else f"Teacher {teacher_id}",
+                'assessments': 0,
+                'avg_rating': 0,
+                'courses': set()
+            }
+        
+        teacher_stats[teacher_id]['assessments'] += 1
+        teacher_stats[teacher_id]['courses'].add(assessment.course_name)
+        
+        # Calculate individual teacher rating
+        answers = TeacherAssessmentAnswer.query.filter_by(assessment_id=assessment.id).all()
+        teacher_ratings = []
+        for answer in answers:
+            if hasattr(answer, 'score') and answer.score:
+                teacher_ratings.append(float(answer.score))
+        teacher_stats[teacher_id]['avg_rating'] = sum(teacher_ratings) / len(teacher_ratings) if teacher_ratings else 0
+    
+    # Convert sets to lists for JSON serialization
+    for teacher_id in teacher_stats:
+        teacher_stats[teacher_id]['courses'] = list(teacher_stats[teacher_id]['courses'])
+    
+    # Course breakdown
+    course_stats = {}
+    for assessment in assessments:
+        course = assessment.course_name
+        if course not in course_stats:
+            course_stats[course] = {'count': 0, 'avg_rating': 0}
+        course_stats[course]['count'] += 1
+    
+    return render_template(
+        'admin/assessment_period_results.html',
+        period=period,
+        assessments=assessments,
+        total_assessments=total_assessments,
+        unique_students=unique_students,
+        unique_teachers=unique_teachers,
+        avg_rating=avg_rating,
+        teacher_stats=teacher_stats,
+        course_stats=course_stats
+    )
 
 
 @admin_bp.route('/teacher-assessment/periods/<int:pid>/toggle', methods=['POST'])
