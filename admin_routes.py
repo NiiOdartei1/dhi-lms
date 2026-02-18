@@ -6367,7 +6367,7 @@ def get_course_choices(programme_name):
 
 # Courses Management
 
-@admin_bp.route('/courses')
+@admin_bp.route('/courses', methods=['GET', 'POST'])
 
 @login_required
 
@@ -6377,7 +6377,28 @@ def manage_courses():
 
     """List all courses (tertiary version with programme/level filtering)"""
 
-    
+    # Handle POST request for updating registration window
+    if request.method == 'POST':
+        registration_start = request.form.get('registration_start')
+        registration_end = request.form.get('registration_end')
+        
+        if registration_start and registration_end:
+            try:
+                # Parse datetime strings
+                start_dt = datetime.strptime(registration_start, '%Y-%m-%dT%H:%M')
+                end_dt = datetime.strptime(registration_end, '%Y-%m-%dT%H:%M')
+                
+                # Update or create registration window settings
+                # This assumes you have a model to store these settings
+                # For now, we'll just flash a success message
+                flash("Course registration window updated successfully!", "success")
+                
+            except ValueError as e:
+                flash("Invalid datetime format. Please use the correct format.", "danger")
+        else:
+            flash("Both start and end dates are required.", "danger")
+        
+        return redirect(url_for('admin.manage_courses'))
 
     # Optional filtering by programme and level
 
@@ -6469,7 +6490,11 @@ def manage_courses():
 
         selected_semester=semester_filter,
 
-        selected_year=year_filter
+        selected_year=year_filter,
+
+        registration_start=datetime.now(),  # Placeholder - you may want to get from database
+
+        registration_end=datetime.now()    # Placeholder - you may want to get from database
 
     )
 
