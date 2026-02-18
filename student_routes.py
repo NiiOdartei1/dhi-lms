@@ -2759,7 +2759,7 @@ def teacher_assessment():
 
             User,
 
-            db.func.group_concat(Course.name, ', ').label('courses')
+            db.func.string_agg(Course.name, ', ').label('courses')
 
         )
 

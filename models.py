@@ -2723,350 +2723,183 @@ from sqlalchemy.sql import func
 
 
 class Course(db.Model):
-
     __tablename__ = 'course'
-
     id = db.Column(db.Integer, primary_key=True)
-
     name = db.Column(db.String(100), nullable=False)
-
     code = db.Column(db.String(20), unique=True, nullable=False)
-
     programme_name = db.Column(db.String(120), nullable=False)  # NEW
-
     programme_level = db.Column(db.String(20), nullable=False)  # NEW (100,200,300)
-
     semester = db.Column(db.String(10), nullable=False)
-
     credit_hours = db.Column(db.Integer, default=3)
-
     academic_year = db.Column(db.String(20), nullable=False)
-
     is_mandatory = db.Column(db.Boolean, default=False)
-
     registration_start = db.Column(db.DateTime)
-
     registration_end = db.Column(db.DateTime)
 
-
-
     @classmethod
-
     def get_registration_window(cls):
-
         """Return a tuple (start, end) of the global registration window."""
-
         result = db.session.query(
-
             func.min(cls.registration_start),
-
             func.max(cls.registration_end)
-
         ).one()
-
         return result  # (start_datetime, end_datetime)
 
-
-
     @classmethod
-
     def set_registration_window(cls, start_dt, end_dt):
-
         """Apply the same window to every course."""
-
         db.session.query(cls).update({
-
             cls.registration_start: start_dt,
-
             cls.registration_end:   end_dt
-
         })
-
         db.session.commit()
 
 
-
 class CourseLimit(db.Model):
-
     __tablename__ = 'course_limit'
 
-
-
     id = db.Column(db.Integer, primary_key=True)
-
     programme_name   = db.Column(db.String(120), nullable=False)
-
     programme_level  = db.Column(db.String(20), nullable=False)  # 100, 200, etc
-
     semester         = db.Column(db.String(10), nullable=False)
-
     academic_year    = db.Column(db.String(20), nullable=False)
-
     mandatory_limit  = db.Column(db.Integer, nullable=False)
-
     optional_limit   = db.Column(db.Integer, nullable=False)
 
 
-
 class StudentCourseRegistration(db.Model):
-
     id = db.Column(db.Integer, primary_key=True)
-
     student_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-
     course_id = db.Column(db.Integer, db.ForeignKey('course.id'), nullable=False)
-
     academic_year = db.Column(db.String(20), nullable=False)
-
     semester = db.Column(db.String(10), nullable=False)
 
-
-
     course = db.relationship('Course', backref='registrations')
-
     student = db.relationship('User', backref='registered_courses')
 
 
-
 class SemesterResultRelease(db.Model):
-
     """Track when results are released/locked for a semester"""
-
     __tablename__ = 'semester_result_release'
-
-    
-
     id = db.Column(db.Integer, primary_key=True)
-
     academic_year = db.Column(db.String(20), nullable=False)
-
     semester = db.Column(db.String(10), nullable=False)
-
     is_released = db.Column(db.Boolean, default=False)
-
     is_locked = db.Column(db.Boolean, default=False)
-
     released_at = db.Column(db.DateTime, nullable=True)
-
     locked_at = db.Column(db.DateTime, nullable=True)
 
     # Who submitted this semester for vetting (user id)
-
     submitted_by = db.Column(db.Integer, nullable=True)
-
     submitted_by_name = db.Column(db.String(200), nullable=True)
-
     submitted_at = db.Column(db.DateTime, nullable=True)
-
     submitted_note = db.Column(db.Text, nullable=True)
 
     # JSON list of courses the submitter indicated (snapshot)
-
     submitted_courses = db.Column(db.Text, nullable=True)
-
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
-
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    
-
     __table_args__ = (
-
         db.UniqueConstraint('academic_year', 'semester',
-
                            name='uq_semester_release'),
-
     )
 
-    
-
     def __repr__(self):
-
         status = 'Released' if self.is_released else 'Not Released'
-
         return f"<SemesterResultRelease {self.academic_year} {self.semester}: {status}>"
 
-    
 
 class TimetableEntry(db.Model):
-
     __tablename__ = 'timetable_entry'
-
     id = db.Column(db.Integer, primary_key=True)
-
     programme_name = db.Column(db.String(120), nullable=False)
-
     programme_level = db.Column(db.String(20), nullable=False)
-
     course_id = db.Column(db.Integer, db.ForeignKey('course.id'), nullable=False)
-
     day_of_week = db.Column(db.String(10), nullable=False)  # e.g., "Monday"
-
     start_time = db.Column(db.Time, nullable=False)
-
     end_time = db.Column(db.Time, nullable=False)
-
-
 
     course = db.relationship('Course', backref='timetable_entries')
 
 
-
-
-
 class TeacherCourseAssignment(db.Model):
-
     __tablename__ = 'teacher_course_assignment'
-
     id         = db.Column(db.Integer, primary_key=True)
-
     teacher_id = db.Column(db.Integer, db.ForeignKey('teacher_profile.id'), nullable=False)
-
     course_id  = db.Column(db.Integer, db.ForeignKey('course.id'), nullable=False)
 
-
-
     teacher = db.relationship("TeacherProfile", backref="assignments")
-
     course  = db.relationship("Course")
 
 
-
 class CourseAssessmentScheme(db.Model):
-
     __tablename__ = 'course_assessment_scheme'
 
-
-
     id = db.Column(db.Integer, primary_key=True)
-
     course_id = db.Column(db.Integer, db.ForeignKey('course.id'), nullable=False)
-
     teacher_id = db.Column(db.Integer, db.ForeignKey('teacher_profile.id'), nullable=False)  # NEW
 
-
-
     programme_name = db.Column(db.String(120), nullable=False)
-
     programme_level = db.Column(db.String(10), nullable=False)
-
     course_code = db.Column(db.String(20), nullable=False)
-
     course_name = db.Column(db.String(255), nullable=False)
-
     academic_year = db.Column(db.String(20), nullable=False)
-
     semester = db.Column(db.String(20), nullable=False)
-
     scheme_start_date = db.Column(db.Date)
-
     scheme_end_date = db.Column(db.Date)
-
     quiz_weight = db.Column(db.Float, nullable=False, default=10.0)
-
     assignment_weight = db.Column(db.Float, nullable=False, default=30.0)
-
     exam_weight = db.Column(db.Float, nullable=False, default=60.0)
-
-
-
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
-
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-
-
     course = db.relationship('Course', backref='assessment_scheme', uselist=False)
-
     teacher = db.relationship('TeacherProfile', backref='assessment_schemes')  # NEW
 
-
-
     __table_args__ = (
-
         db.Index('idx_scheme_programme_level', 'programme_name', 'programme_level'),
-
         db.Index('idx_scheme_academic_period', 'academic_year', 'semester'),
-
         db.Index('idx_scheme_course', 'course_id'),
-
     )
 
-    
-
     def __repr__(self):
-
         return (
-
             f"<Scheme {self.programme_name} {self.programme_level} "
-
             f"{self.course_code}: Q{self.quiz_weight}% A{self.assignment_weight}% E{self.exam_weight}%>"
-
         )
 
-    
-
     @property
-
     def total_weight(self):
-
         """Verify weights sum to 100"""
-
         return self.quiz_weight + self.assignment_weight + self.exam_weight
 
-    
-
     def is_valid(self):
-
         """Check if weights are valid (should sum to 100)"""
-
         return abs(self.total_weight - 100.0) < 0.01
 
-    
-
     def is_active(self):
-
         """Check if scheme is currently active"""
-
         today = datetime.utcnow().date()
-
         if self.scheme_start_date and today < self.scheme_start_date:
-
             return False
-
         if self.scheme_end_date and today > self.scheme_end_date:
-
             return False
-
         return True
 
-
-
 class AttendanceRecord(db.Model):
-
     __tablename__ = 'attendance_record'
-
     id = db.Column(db.Integer, primary_key=True)
-
     student_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-
     teacher_id = db.Column(db.Integer, db.ForeignKey('teacher_profile.id'), nullable=False)
-
     course_id = db.Column(db.Integer, db.ForeignKey('course.id'), nullable=True)
-
     date = db.Column(db.Date, nullable=False, default=datetime.utcnow)
-
     is_present = db.Column(db.Boolean, default=False)
 
-
-
     student = db.relationship('User')
-
     teacher = db.relationship('TeacherProfile')
-
     course = db.relationship('Course')
-
-
+    
 
 class AcademicCalendar(db.Model):
 
