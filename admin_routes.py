@@ -6388,17 +6388,26 @@ def manage_courses():
                 start_dt = datetime.strptime(registration_start, '%Y-%m-%dT%H:%M')
                 end_dt = datetime.strptime(registration_end, '%Y-%m-%dT%H:%M')
                 
-                # Update or create registration window settings
-                # This assumes you have a model to store these settings
-                # For now, we'll just flash a success message
+                # Update registration window using Course model method
+                Course.set_registration_window(start_dt, end_dt)
+                db.session.commit()
+                
                 flash("Course registration window updated successfully!", "success")
                 
             except ValueError as e:
                 flash("Invalid datetime format. Please use the correct format.", "danger")
+            except Exception as e:
+                db.session.rollback()
+                flash(f"Error updating registration window: {str(e)}", "danger")
         else:
             flash("Both start and end dates are required.", "danger")
         
         return redirect(url_for('admin.manage_courses'))
+
+    # Get current registration window
+    registration_window = Course.get_registration_window()
+    registration_start = registration_window[0] if registration_window and registration_window[0] else None
+    registration_end = registration_window[1] if registration_window and registration_window[1] else None
 
     # Optional filtering by programme and level
 
@@ -6492,9 +6501,9 @@ def manage_courses():
 
         selected_year=year_filter,
 
-        registration_start=datetime.now(),  # Placeholder - you may want to get from database
+        registration_start=registration_start,
 
-        registration_end=datetime.now()    # Placeholder - you may want to get from database
+        registration_end=registration_end
 
     )
 
