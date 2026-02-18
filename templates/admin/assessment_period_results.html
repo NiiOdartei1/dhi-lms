@@ -126,13 +126,14 @@
               <td>
                 <div class="d-flex align-items-center">
                   <div class="progress me-2" style="width: 100px; height: 8px;">
+                    {% set progress_width = (stats.avg_rating / 5) * 100 %}
                     <div class="progress-bar 
                       {% if stats.avg_rating >= 4 %}bg-success
                       {% elif stats.avg_rating >= 3 %}bg-info
                       {% elif stats.avg_rating >= 2 %}bg-warning
                       {% else %}bg-danger
                       {% endif %}" 
-                      style="width: {{ (stats.avg_rating / 5) * 100 }}%"></div>
+                      style="width: {{ progress_width }}%"></div>
                   </div>
                   <small>{{ "%.1f"|format(stats.avg_rating) }}/5.0</small>
                 </div>
@@ -175,8 +176,9 @@
               <p class="mb-2">
                 <span class="badge bg-info">{{ stats.count }}</span> Assessments
               </p>
+              {% set course_progress = (stats.count / total_assessments) * 100 %}
               <div class="progress" style="height: 6px;">
-                <div class="progress-bar bg-primary" style="width: {{ (stats.count / total_assessments) * 100 }}%"></div>
+                <div class="progress-bar bg-primary" style="width: {{ course_progress }}%"></div>
               </div>
             </div>
           </div>
@@ -187,30 +189,39 @@
   </div>
 </div>
 
+<!-- Template Data Preparation -->
+{% set teacher_names = [] %}
+{% set teacher_ratings = [] %}
+{% for teacher_id, stats in teacher_stats.items() %}
+  {% if teacher_names.append(stats.name) %}{% endif %}
+  {% if teacher_ratings.append(stats.avg_rating) %}{% endif %}
+{% endfor %}
+
 <!-- Chart.js -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
-// Prepare data for charts
-const teacherNames = [{% for teacher_id, stats in teacher_stats.items() %}'{{ stats.name }}'{% if not loop.last %},{% endif %}{% endfor %}];
-const teacherRatings = [{% for teacher_id, stats in teacher_stats.items() %}{{ "%.1f"|format(stats.avg_rating) }}{% if not loop.last %},{% endif %}{% endfor %}];
-const teacherColors = [{% for teacher_id, stats in teacher_stats.items() %}
-  {% if stats.avg_rating >= 4.5 %}'rgba(40, 167, 69, 0.8)'
-  {% elif stats.avg_rating >= 3.5 %}'rgba(13, 202, 240, 0.8)'
-  {% elif stats.avg_rating >= 2.5 %}'rgba(255, 193, 7, 0.8)'
-  {% else %}'rgba(220, 53, 69, 0.8)'
-  {% endif %}{% if not loop.last %},{% endif %}
-{% endfor %}];
-const teacherBorders = [{% for teacher_id, stats in teacher_stats.items() %}
-  {% if stats.avg_rating >= 4.5 %}'rgba(40, 167, 69, 1)'
-  {% elif stats.avg_rating >= 3.5 %}'rgba(13, 202, 240, 1)'
-  {% elif stats.avg_rating >= 2.5 %}'rgba(255, 193, 7, 1)'
-  {% else %}'rgba(220, 53, 69, 1)'
-  {% endif %}{% if not loop.last %},{% endif %}
-{% endfor %}];
+// Data prepared by template
+var teacherNames = {{ teacher_names|tojson }};
+var teacherRatings = {{ teacher_ratings|tojson }};
+
+// Generate colors based on ratings
+var teacherColors = teacherRatings.map(function(rating) {
+  if (rating >= 4.5) return 'rgba(40, 167, 69, 0.8)';
+  if (rating >= 3.5) return 'rgba(13, 202, 240, 0.8)';
+  if (rating >= 2.5) return 'rgba(255, 193, 7, 0.8)';
+  return 'rgba(220, 53, 69, 0.8)';
+});
+
+var teacherBorders = teacherRatings.map(function(rating) {
+  if (rating >= 4.5) return 'rgba(40, 167, 69, 1)';
+  if (rating >= 3.5) return 'rgba(13, 202, 240, 1)';
+  if (rating >= 2.5) return 'rgba(255, 193, 7, 1)';
+  return 'rgba(220, 53, 69, 1)';
+});
 
 // Teacher Performance Chart
-const teacherCtx = document.getElementById('teacherPerformanceChart').getContext('2d');
-const teacherData = {
+var teacherCtx = document.getElementById('teacherPerformanceChart').getContext('2d');
+var teacherData = {
   labels: teacherNames,
   datasets: [{
     label: 'Average Rating',
@@ -245,8 +256,8 @@ new Chart(teacherCtx, {
 });
 
 // Completion Chart
-const completionCtx = document.getElementById('completionChart').getContext('2d');
-const completionData = {
+var completionCtx = document.getElementById('completionChart').getContext('2d');
+var completionData = {
   labels: ['Completed Assessments', 'Students Participated', 'Teachers Assessed'],
   datasets: [{
     label: 'Count',
