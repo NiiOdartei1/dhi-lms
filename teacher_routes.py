@@ -7,7 +7,7 @@ from flask import Blueprint, render_template, abort, flash, redirect, url_for, r
 from flask_login import login_required, current_user, login_user
 import requests
 from wtforms import SelectField
-from models import CourseAssessmentScheme, CourseMaterial, ExamOption, ExamQuestion, ExamSet, ExamSetQuestion, Meeting, Option, Question, SemesterResultRelease, db, TeacherProfile, Course, StudentCourseRegistration, TeacherCourseAssignment, AttendanceRecord, User, StudentProfile, AcademicCalendar, AcademicYear, AppointmentBooking, AppointmentSlot, Assignment, Quiz, StudentQuizSubmission, Exam, ExamSubmission, AssignmentSubmission, GradingScale, ExamTimetableEntry
+from models import CourseAssessmentScheme, CourseMaterial, ExamOption, ExamQuestion, ExamSet, ExamSetQuestion, Meeting, Option, Question, SemesterResultRelease, db, TeacherProfile, Course, StudentCourseRegistration, TeacherCourseAssignment, AttendanceRecord, User, StudentProfile, AcademicCalendar, AcademicYear, AppointmentBooking, AppointmentSlot, Assignment, Quiz, StudentQuizSubmission, Exam, ExamSubmission, AssignmentSubmission, GradingScale, ExamTimetableEntry, TeacherAssessment, TeacherAssessmentAnswer, TeacherAssessmentPeriod
 from forms import AssignmentForm, ChangePasswordForm, ExamForm, ExamQuestionForm, ExamSetForm, MaterialForm, MeetingForm, QuizForm, TeacherLoginForm
 from werkzeug.utils import secure_filename
 from datetime import datetime, timedelta, date
@@ -3036,3 +3036,77 @@ def view_exam_timetable():
     return render_template('teacher/exam_timetable.html', entries=entries,
                            programmes=programmes, levels=levels,
                            semesters=semesters, courses_map=courses_map)
+
+
+@teacher_bp.route('/assessment-performance')
+@login_required
+def assessment_performance():
+    """Show teacher their assessment performance from students."""
+    if current_user.role != 'teacher':
+        abort(403)
+    
+    teacher = TeacherProfile.query.filter_by(user_id=current_user.user_id).first_or_404()
+    
+    # Get all assessments for this teacher
+    assessments = TeacherAssessment.query.filter_by(teacher_id=current_user.user_id).all()
+    
+    if not assessments:
+        return render_template('teacher/assessment_performance.html', 
+                          teacher=teacher, 
+                          assessments=[], 
+                          stats=None,
+                          periods=[])
+    
+    # Calculate statistics
+    total_assessments = len(assessments)
+    unique_students = len(set(a.student_id for a in assessments))
+    
+    # Get all answers for this teacher
+    assessment_ids = [a.id for a in assessments]
+    answers = TeacherAssessmentAnswer.query.filter(
+        TeacherAssessmentAnswer.assessment_id.in_(assessment_ids)
+    ).all()
+    
+    # Calculate average rating
+    avg_rating = 0
+    if answers:
+        ratings = [float(answer.score) for answer in answers if hasattr(answer, 'score') and answer.score]
+        avg_rating = sum(ratings) / len(ratings) if ratings else 0
+    
+    # Group by period
+    period_stats = {}
+    for assessment in assessments:
+        period_id = assessment.period_id
+        if period_id not in period_stats:
+            period_stats[period_id] = {
+                'period': None,
+                'assessments': 0,
+                'avg_rating': 0,
+                'answers': []
+            }
+        period_stats[period_id]['assessments'] += 1
+        period_stats[period_id]['answers'].extend([a for a in answers if a.assessment_id == assessment.id])
+    
+    # Calculate period averages and get period details
+    periods = []
+    for period_id, stats in period_stats.items():
+        period = TeacherAssessmentPeriod.query.get(period_id)
+        if period:
+            stats['period'] = period
+            period_ratings = [float(a.score) for a in stats['answers'] if hasattr(a, 'score') and a.score]
+            stats['avg_rating'] = sum(period_ratings) / len(period_ratings) if period_ratings else 0
+            periods.append(stats)
+    
+    # Overall stats
+    overall_stats = {
+        'total_assessments': total_assessments,
+        'unique_students': unique_students,
+        'avg_rating': avg_rating,
+        'periods_count': len(periods)
+    }
+    
+    return render_template('teacher/assessment_performance.html', 
+                      teacher=teacher, 
+                      assessments=assessments, 
+                      stats=overall_stats,
+                      periods=periods)
