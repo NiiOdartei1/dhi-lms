@@ -345,30 +345,6 @@ body.dark-mode .btn-ghost {
   <i class="fas fa-tasks"></i><span class="nav-link-text">Assignments</span>
 </a>
 
-
-<!-- New: View Exam Timetable -->
-<a href="{{ url_for('teacher.view_exam_timetable') }}"
-  role="menuitem"
-  data-endpoint="teacher.view_exam_timetable"
-  class="{% if ep.startswith('teacher.view_exam_timetable') %}active{% endif %}">
-  <i class="fas fa-calendar-alt"></i><span class="nav-link-text">Exam Timetable</span>
-</a>
-
-<!-- New: Manage Materials -->
-<a href="{{ url_for('teacher.manage_materials') }}"
-  role="menuitem"
-  data-endpoint="teacher.manage_materials"
-  class="{% if ep.startswith('teacher.manage_materials') %}active{% endif %}">
-  <i class="fas fa-book"></i><span class="nav-link-text">Materials</span>
-</a>
-
-<a href="{{ url_for('teacher.submissions_index') }}"
-  role="menuitem"
-  data-endpoint="teacher.submissions_index"
-  class="{% if ep.startswith('teacher.submissions_index') %}active{% endif %}">
-  <i class="fas fa-file-alt"></i><span class="nav-link-text">Submissions</span>
-</a>
-
       <!-- New: Manage Materials -->
       <a href="{{ url_for('teacher.manage_materials') }}"
         role="menuitem"
