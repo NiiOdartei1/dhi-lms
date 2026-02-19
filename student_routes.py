@@ -2894,7 +2894,7 @@ def teacher_assessment():
             student_id=current_user.user_id,
             teacher_id=teacher_id,
             period_id=period.id,
-            class_name=profile.current_class or "Unknown",
+            class_name=f"{profile.current_programme} Level {profile.programme_level}",
             course_name=profile.current_programme or "Unknown"
         )
 
