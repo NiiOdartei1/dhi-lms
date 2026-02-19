@@ -8289,7 +8289,7 @@ def edit_teacher_assessment_question(qid):
         return redirect(url_for('admin.teacher_assessment_questions'))
 
     return render_template(
-        'admin/teacher_assessment/question_form.html',
+        'admin/teacher_assessment_question_form.html',
         q=q
     )
 
