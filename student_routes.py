@@ -214,7 +214,7 @@ def register_courses():
 
     programme_name = profile.current_programme
 
-    programme_level = profile.programme_level
+    programme_level = str(profile.programme_level)  # Convert integer to string for database compatibility
 
 
 
