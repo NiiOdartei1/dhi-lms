@@ -2889,18 +2889,13 @@ def teacher_assessment():
 
 
 
-        # Store programme and level instead of class
-
+        # Create assessment record
         assessment = TeacherAssessment(
-
             student_id=current_user.user_id,
-
             teacher_id=teacher_id,
-
             period_id=period.id,
-
-            programme_name=profile.current_programme  # NEW: store programme
-
+            class_name=profile.current_class or "Unknown",
+            course_name=profile.current_programme or "Unknown"
         )
 
         # Note: Store level in course_name temporarily or create new field
