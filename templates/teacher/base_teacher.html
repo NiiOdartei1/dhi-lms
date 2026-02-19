@@ -398,6 +398,14 @@ body.dark-mode .btn-ghost {
         <i class="fas fa-chart-line"></i><span class="nav-link-text">Quiz & Exam Results</span>
       </a>
 
+      <!-- Assessment Performance -->
+      <a href="{{ url_for('teacher.assessment_performance') }}"
+         role="menuitem"
+         data-endpoint="teacher.assessment_performance"
+         class="{% if ep.startswith('teacher.assessment_performance') %}active{% endif %}">
+        <i class="fas fa-star"></i><span class="nav-link-text">Assessment Performance</span>
+      </a>
+
       <!-- Calendar & Appointments -->
       <a href="{{ url_for('teacher.calendar') }}"
          role="menuitem"
