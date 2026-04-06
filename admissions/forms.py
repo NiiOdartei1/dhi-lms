@@ -131,7 +131,8 @@ VOCATIONAL_PROGRAMMES = [
     ('Tourism & Travel Services', 'Tourism & Travel Services'),
     ('Agriculture & Crop Production', 'Agriculture & Crop Production'),
     ('Livestock & Animal Husbandry', 'Livestock & Animal Husbandry'),
-    ('Industrial Maintenance', 'Industrial Maintenance')
+    ('Industrial Maintenance', 'Industrial Maintenance'),
+    ('Graphic Design', 'Graphic Design')
 ]
 
 # Study formats - Regular and Online only

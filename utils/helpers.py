@@ -50,7 +50,8 @@ def get_programme_choices():
         'Tourism & Travel Services',
         'Agriculture & Crop Production',
         'Livestock & Animal Husbandry',
-        'Industrial Maintenance'
+        'Industrial Maintenance',
+        'Graphic Design'
     ]
 
     # Combine, remove duplicates, and return as list of tuples for WTForms

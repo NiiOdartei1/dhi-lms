@@ -48,6 +48,7 @@ PROGRAMME_CODES = {
     'Agriculture & Crop Production': '30',
     'Livestock & Animal Husbandry': '31',
     'Industrial Maintenance': '32',
+    'Graphic Design': '33',
 }
 
 
